@@ -44,10 +44,17 @@ dismiss the overlay (you remain in copy mode).
 
 ** Configuration
 
+The capture-mode command enters capture mode in one step: it enters copy mode
+if the pane is not already in it, then arms the hint overlay. If the pane is
+already in copy mode, it arms the overlay directly without losing the current
+scroll position. It is bindable from any table.
+
 Add to ~/.tmux.conf:
 
-	# Keybindings (defaults: Prefix + Y, and Y inside copy mode)
-	bind-key Y { copy-mode ; send -X capture }
+	# One-key entry from a normal pane (default: Prefix + Y)
+	bind-key Y { capture-mode }
+
+	# Also arm directly from within copy mode
 	bind-key -Tcopy-mode    Y { send -X capture }
 	bind-key -Tcopy-mode-vi Y { send -X capture }
 
@@ -62,8 +69,17 @@ Add to ~/.tmux.conf:
 	# when there are more matches than single keys.
 	set -g @capture-hint-keys "asdfjklgh"
 
-Hint labels are styled with the copy-mode-match-style and
-copy-mode-current-match-style options.
+	# Overlay styles (tmux style strings; gruvbox defaults shown).
+	# @capture-match-style       highlights the whole matched text
+	# @capture-hint-style        the hint label
+	# @capture-hint-typed-style  the already-typed prefix of a hint
+	set -g @capture-match-style       "bg=#458588"
+	set -g @capture-hint-style        "fg=#282828,bg=#fabd2f,bold"
+	set -g @capture-hint-typed-style  "fg=#fbf1c7,bg=#fb4934,bold"
+
+Each match is highlighted with @capture-match-style and its hint label is
+overlaid on the start of the match using @capture-hint-style. As you type, the
+matched prefix of the hint is shown with @capture-hint-typed-style.
 
 ** Built-in Patterns
 

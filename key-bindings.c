@@ -403,7 +403,7 @@ key_bindings_init(void)
 		"bind -N 'Choose a session from a list' s { choose-tree -Zs }",
 		"bind -N 'Show a clock' t { clock-mode }",
 #ifdef ENABLE_CAPTURE_MODE
-		"bind -N 'Enter capture mode' Y { copy-mode ; send -X capture }",
+		"bind -N 'Enter capture mode' Y { capture-mode }",
 #endif
 		"bind -N 'Switch to a window' Tab { new-pane -E -x75% -y30% -X0 -Y0; move-pane -P bottom-centre; switch-mode -wk }",
 		"bind -N 'Switch to a session' BTab { new-pane -E -x75% -y30% -X0 -Y0; move-pane -P bottom-centre; switch-mode -sk }",

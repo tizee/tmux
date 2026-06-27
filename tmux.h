@@ -3805,6 +3805,9 @@ int		 window_copy_get_current_offset(struct window_pane *, u_int *,
 		     u_int *);
 char		*window_copy_get_hyperlink(struct window_pane *, u_int, u_int);
 void		 window_copy_set_line_numbers(struct window_pane *, int);
+#ifdef ENABLE_CAPTURE_MODE
+void		 window_copy_capture_pane(struct window_pane *, struct client *);
+#endif
 
 /* window-customize.c */
 extern const struct window_mode window_customize_mode;

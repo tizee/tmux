@@ -138,6 +138,45 @@ TEST(match_email)
 	capture_pattern_free(&cp);
 }
 
+TEST(match_home_path)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	/* The default patterns must recognise ~ and relative paths. */
+	capture_pattern_compile(&cp, CAPTURE_DEFAULT_PATTERNS);
+
+	matches = capture_pattern_match_line(
+		&cp, "edit ~/.config/tmux/tmux.conf now", 0, &count);
+	ASSERT(count >= 1, "should find the home path");
+	ASSERT_STR_EQ(matches[0].text, "~/.config/tmux/tmux.conf",
+		      "should include the ~ prefix");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(match_absolute_and_relative_path)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, CAPTURE_DEFAULT_PATTERNS);
+
+	matches = capture_pattern_match_line(
+		&cp, "see /etc/hosts and ./src/main.c", 0, &count);
+	ASSERT_INT_EQ(count, 2, "should find both paths");
+	ASSERT_STR_EQ(matches[0].text, "/etc/hosts",
+		      "absolute path");
+	ASSERT_STR_EQ(matches[1].text, "./src/main.c",
+		      "relative path with ./ prefix");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
 TEST(match_multiple)
 {
 	struct capture_pattern cp = { .valid = 0 };
@@ -275,6 +314,8 @@ main(void)
 	RUN_TEST(compile_invalid_regex);
 	RUN_TEST(match_url);
 	RUN_TEST(match_email);
+	RUN_TEST(match_home_path);
+	RUN_TEST(match_absolute_and_relative_path);
 	RUN_TEST(match_multiple);
 	RUN_TEST(match_none);
 	RUN_TEST(match_with_alternation);

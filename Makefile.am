@@ -252,7 +252,8 @@ dist_tmux_SOURCES += \
 	capture-hint.c \
 	capture-hint.h \
 	capture-pattern.c \
-	capture-pattern.h
+	capture-pattern.h \
+	cmd-capture-mode.c
 # Capture mode docs are kept as-is in the installed manual.
 CAPTURE_MAN_FILTER = cat
 else

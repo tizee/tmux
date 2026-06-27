@@ -30,6 +30,9 @@
 extern const struct cmd_entry cmd_attach_session_entry;
 extern const struct cmd_entry cmd_bind_key_entry;
 extern const struct cmd_entry cmd_break_pane_entry;
+#ifdef ENABLE_CAPTURE_MODE
+extern const struct cmd_entry cmd_capture_mode_entry;
+#endif
 extern const struct cmd_entry cmd_capture_pane_entry;
 extern const struct cmd_entry cmd_choose_buffer_entry;
 extern const struct cmd_entry cmd_choose_client_entry;
@@ -124,6 +127,9 @@ const struct cmd_entry *cmd_table[] = {
 	&cmd_attach_session_entry,
 	&cmd_bind_key_entry,
 	&cmd_break_pane_entry,
+#ifdef ENABLE_CAPTURE_MODE
+	&cmd_capture_mode_entry,
+#endif
 	&cmd_capture_pane_entry,
 	&cmd_choose_buffer_entry,
 	&cmd_choose_client_entry,

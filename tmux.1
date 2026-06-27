@@ -2659,6 +2659,26 @@ bind PageUp copy\-mode \-eu
 bind PageDown copy\-mode \-ed
 .Ed
 .El
+.\" CAPTURE-MODE-START
+.Pp
+The
+.Ic capture\-mode
+command (a tizee fork addition, enabled with
+.Ic --enable-capture-mode )
+enters capture mode in one step:
+.Bl -tag -width Ds
+.It Xo Ic capture\-mode
+.Op Fl t Ar target\-pane
+.Xc
+Enter copy mode if the pane is not already in it, then arm the capture hint
+overlay.
+If the pane is already in copy mode the overlay is armed directly, preserving
+the current scroll position.
+This command can be bound from any table for one-key entry; see the
+.Sx CAPTURE MODE
+section.
+.El
+.\" CAPTURE-MODE-END
 .Pp
 A number of preset arrangements of panes are available, these are called
 layouts.
@@ -4169,27 +4189,26 @@ It provides hint-based selection of interesting text (URLs, file paths, git
 SHAs, email addresses, IP addresses and more) visible in a pane, similar to the
 external tmux-capture plugin but without external dependencies.
 .Pp
-Capture mode is entered with
-.Ic copy-mode
-followed by the
+Capture mode is entered with the
+.Ic capture\-mode
+command, which enters copy mode if necessary and then arms the hint overlay.
+While already in copy mode, the
 .Ic capture
-copy-mode command.
-By default it is bound to
-.Ic Y
-both from the prefix table (which enters copy mode first) and from within copy
-mode:
+copy-mode command arms the overlay on the current view.
+By default both are bound to
+.Ic Y :
 .Bd -literal -offset indent
-bind-key Y { copy-mode ; send-keys -X capture }
+bind-key Y { capture-mode }
 bind-key -T copy-mode    Y { send-keys -X capture }
 bind-key -T copy-mode-vi Y { send-keys -X capture }
 .Ed
 .Pp
 When armed, the visible region of the pane is scanned and each match is
-overlaid with a short, prefix-free hint label drawn using the
-.Ic copy-mode-match-style
-and
-.Ic copy-mode-current-match-style
-options.
+highlighted with the
+.Ic @capture-match-style
+and overlaid with a short, prefix-free hint label drawn using the
+.Ic @capture-hint-style
+option.
 Because capture mode is an overlay on copy mode, it operates on whatever is
 currently visible, including scrollback that has been scrolled into view.
 .Pp
@@ -4223,6 +4242,21 @@ The set of keys used to build hint labels.
 Defaults to
 .Ql asdfjklgh .
 At least two keys are required.
+.It Ic @capture-match-style Ar style
+Style used to highlight the whole of each matched piece of text.
+See the
+.Sx STYLES
+section.
+Defaults to
+.Ql bg=#458588 .
+.It Ic @capture-hint-style Ar style
+Style used to draw the hint label overlaid on the start of each match.
+Defaults to
+.Ql fg=#282828,bg=#fabd2f,bold .
+.It Ic @capture-hint-typed-style Ar style
+Style used for the portion of a hint label that has already been typed.
+Defaults to
+.Ql fg=#fbf1c7,bg=#fb4934,bold .
 .El
 .Pp
 When two matches overlap, the longer match is preferred; for equal lengths the

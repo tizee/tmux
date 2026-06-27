@@ -121,8 +121,11 @@ static void	window_copy_capture_start(struct window_mode_entry *,
 static void	window_copy_capture_stop(struct window_mode_entry *,
 		    struct client *);
 static void	window_copy_capture_clear(struct window_copy_mode_data *);
-static void	window_copy_capture_key(struct window_mode_entry *,
+static int	window_copy_capture_key(struct window_mode_entry *,
 		    struct client *, key_code);
+static void	window_copy_capture_draw_match(struct screen_write_ctx *,
+		    struct grid *, u_int, u_int, u_int, u_int,
+		    const struct grid_cell *, u_int);
 static void	window_copy_capture_draw_label(struct screen_write_ctx *,
 		    struct capture_hint *, int, const struct grid_cell *,
 		    const struct grid_cell *, u_int);
@@ -383,6 +386,9 @@ struct window_copy_mode_data {
 	char			 capture_input[CAPTURE_HINT_MAX_LEN];
 	int			 capture_input_len;
 	char			*capture_key_table;
+	struct grid_cell	 capture_match_gc;	/* matched text */
+	struct grid_cell	 capture_hint_gc;	/* hint label */
+	struct grid_cell	 capture_typed_gc;	/* typed hint prefix */
 #endif
 };
 
@@ -3156,8 +3162,10 @@ window_copy_cmd_capture_key(struct window_copy_cmd_state *cs)
 	struct window_copy_mode_data	*data = cs->wme->data;
 	const char			*arg0 = args_string(cs->wargs, 0);
 
-	if (data->capture_active && arg0 != NULL && *arg0 != '\0')
-		window_copy_capture_key(cs->wme, cs->c, (key_code)*arg0);
+	if (data->capture_active && arg0 != NULL && *arg0 != '\0') {
+		if (window_copy_capture_key(cs->wme, cs->c, (key_code)*arg0))
+			return (WINDOW_COPY_CMD_CANCEL);
+	}
 	return (WINDOW_COPY_CMD_NOTHING);
 }
 
@@ -5884,6 +5892,31 @@ window_copy_capture_pattern(struct options *oo)
 }
 
 /*
+ * Resolve a capture style option into a grid cell. The option value is a
+ * standard style string (e.g. "fg=black,bg=yellow"); when the option is unset
+ * the supplied default style string is used. Defaults follow the gruvbox
+ * palette used by the original tmux-capture plugin.
+ */
+static void
+window_copy_capture_style(struct options *oo, const char *name,
+    const char *def, struct grid_cell *gc)
+{
+	struct style	 sy;
+	const char	*value;
+
+	style_set(&sy, &grid_default_cell);
+	if (options_get(oo, name) != NULL)
+		value = options_get_string(oo, name);
+	else
+		value = def;
+	if (style_parse(&sy, &grid_default_cell, value) == 0)
+		memcpy(gc, &sy.gc, sizeof *gc);
+	else
+		memcpy(gc, &grid_default_cell, sizeof *gc);
+	gc->flags |= GRID_FLAG_NOPALETTE;
+}
+
+/*
  * Bind the hint keys and cancel keys into a per-pane key table so raw
  * keystrokes are routed to the capture commands while the overlay is active.
  */
@@ -5933,6 +5966,33 @@ window_copy_capture_bind_keys(struct window_copy_mode_data *data)
 }
 
 /*
+ * Convert a byte offset within a row's joined string (as produced by
+ * grid_string_cells) into a display column on that row. Walks the grid cells
+ * accumulating UTF-8 byte sizes until the target offset is reached, so
+ * multibyte and double-width content (CJK, powerline glyphs) map correctly.
+ */
+static u_int
+window_copy_capture_byte_to_col(struct grid *gd, u_int py, size_t target)
+{
+	struct grid_cell	 gc;
+	u_int			 col, sx = gd->sx;
+	size_t			 off = 0;
+
+	for (col = 0; col < sx; col++) {
+		if (off >= target)
+			break;
+		grid_get_cell(gd, col, py, &gc);
+		if (gc.flags & GRID_FLAG_PADDING)
+			continue;
+		if (gc.flags & GRID_FLAG_TAB)
+			off += 1;
+		else
+			off += gc.data.size;
+	}
+	return (col);
+}
+
+/*
  * Scan the visible region of the pane for pattern matches, generate hints and
  * arm the overlay. Matches are stored in screen-relative coordinates so the
  * overlay aligns with what the user currently sees.
@@ -5969,6 +6029,14 @@ window_copy_capture_start(struct window_mode_entry *wme, struct client *c)
 		hint_keys = CAPTURE_DEFAULT_HINT_KEYS;
 	data->capture_hint_keys = xstrdup(hint_keys);
 
+	/* Resolve overlay styles (gruvbox defaults, user-overridable). */
+	window_copy_capture_style(oo, "@capture-match-style",
+	    "bg=#458588", &data->capture_match_gc);
+	window_copy_capture_style(oo, "@capture-hint-style",
+	    "fg=#282828,bg=#fabd2f,bold", &data->capture_hint_gc);
+	window_copy_capture_style(oo, "@capture-hint-typed-style",
+	    "fg=#fbf1c7,bg=#fb4934,bold", &data->capture_typed_gc);
+
 	/* Scan the visible rows only. */
 	sx = gd->sx;
 	sy = screen_size_y(&data->screen);
@@ -5982,6 +6050,19 @@ window_copy_capture_start(struct window_mode_entry *wme, struct client *c)
 		lm = capture_pattern_match_line(&data->capture_pattern, line,
 		    row, &line_n);
 		if (line_n > 0) {
+			int	k;
+
+			/*
+			 * Match offsets are byte positions in the joined line;
+			 * convert them to display columns so the overlay aligns
+			 * with multibyte and double-width content.
+			 */
+			for (k = 0; k < line_n; k++) {
+				lm[k].sx = window_copy_capture_byte_to_col(gd,
+				    py, lm[k].sx);
+				lm[k].ex = window_copy_capture_byte_to_col(gd,
+				    py, lm[k].ex);
+			}
 			data->capture_matches = xrecallocarray(
 			    data->capture_matches, data->capture_match_count,
 			    data->capture_match_count + line_n,
@@ -6044,10 +6125,26 @@ window_copy_capture_stop(struct window_mode_entry *wme, struct client *c)
 }
 
 /*
- * Handle a hint keystroke. Append it to the input buffer and check for a
- * unique match; if found, copy the matched text and disarm.
+ * Public entry: arm capture mode on a pane that is already in copy mode. Used
+ * by the capture-mode command after it has ensured copy mode is active.
  */
-static void
+void
+window_copy_capture_pane(struct window_pane *wp, struct client *c)
+{
+	struct window_mode_entry	*wme = TAILQ_FIRST(&wp->modes);
+
+	if (wme == NULL || wme->mode != &window_copy_mode)
+		return;
+	window_copy_capture_start(wme, c);
+	window_copy_redraw_screen(wme);
+}
+
+/*
+ * Handle a hint keystroke. Append it to the input buffer and check for a
+ * unique match; if found, copy the matched text. Returns 1 if a selection was
+ * made (the caller should exit copy mode), 0 otherwise.
+ */
+static int
 window_copy_capture_key(struct window_mode_entry *wme, struct client *c,
     key_code key)
 {
@@ -6060,7 +6157,7 @@ window_copy_capture_key(struct window_mode_entry *wme, struct client *c,
 
 	if (data->capture_input_len >= CAPTURE_HINT_MAX_LEN) {
 		data->capture_input_len = 0;
-		return;
+		return (0);
 	}
 	data->capture_input[data->capture_input_len++] = (char)(key & 0xff);
 
@@ -6073,7 +6170,7 @@ window_copy_capture_key(struct window_mode_entry *wme, struct client *c,
 		    (size_t)data->capture_input_len) != 0)
 			continue;
 		if (h->len == data->capture_input_len) {
-			/* Exact match: copy and finish. */
+			/* Exact match: copy, disarm and signal exit. */
 			m = &data->capture_matches[i];
 			buf = m->text;
 			len = strlen(buf);
@@ -6082,8 +6179,7 @@ window_copy_capture_key(struct window_mode_entry *wme, struct client *c,
 			window_copy_copy_buffer(wme, NULL, xstrdup(buf), len,
 			    set_paste, set_clip);
 			window_copy_capture_stop(wme, c);
-			window_copy_redraw_screen(wme);
-			return;
+			return (1);
 		}
 		prefixes++;
 	}
@@ -6093,12 +6189,43 @@ window_copy_capture_key(struct window_mode_entry *wme, struct client *c,
 		data->capture_input_len = 0;
 	}
 	window_copy_redraw_screen(wme);
+	return (0);
 }
 
 /*
- * Draw a single hint label at the cursor position. Characters already typed
- * by the user are drawn with the typed style; the remaining characters use
- * the default hint style. The label is clipped to avail columns.
+ * Highlight a matched segment by re-drawing its original grid cells with the
+ * match style's colours applied. py is the absolute grid row; sx and ex are
+ * display columns (start inclusive, end exclusive). The screen cursor is left
+ * after the segment.
+ */
+static void
+window_copy_capture_draw_match(struct screen_write_ctx *ctx, struct grid *gd,
+    u_int py, u_int row, u_int sx, u_int ex, const struct grid_cell *style,
+    u_int screen_sx)
+{
+	struct grid_cell	 gc;
+	u_int			 col;
+
+	if (ex > screen_sx)
+		ex = screen_sx;
+	screen_write_cursormove(ctx, sx, row, 0);
+	for (col = sx; col < ex; col++) {
+		grid_get_cell(gd, col, py, &gc);
+		if (gc.flags & GRID_FLAG_PADDING)
+			continue;
+		/* Keep the glyph, override colours/attrs from the style. */
+		gc.fg = style->fg;
+		gc.bg = style->bg;
+		gc.attr = style->attr;
+		gc.flags |= GRID_FLAG_NOPALETTE;
+		screen_write_cell(ctx, &gc);
+	}
+}
+
+/*
+ * Draw a hint label at the current cursor position. Characters already typed
+ * by the user use the typed style; the rest use the default hint style. The
+ * label is clipped to avail columns.
  */
 static void
 window_copy_capture_draw_label(struct screen_write_ctx *ctx,
@@ -6116,23 +6243,22 @@ window_copy_capture_draw_label(struct screen_write_ctx *ctx,
 }
 
 /*
- * Overlay hint labels on the rendered screen. Called at the end of the normal
- * copy-mode redraw so labels sit on top of the pane content. The typed prefix
- * of each hint is dimmed; non-matching hints are hidden once input begins.
+ * Overlay matches and hint labels on the rendered screen. Drawn at the end of
+ * the normal copy-mode redraw so it sits on top of the pane content. Each
+ * visible match is first highlighted with the match style, then its hint label
+ * is overlaid on the start of the match. Non-matching hints are hidden once
+ * input begins.
  */
 static void
 window_copy_capture_draw(struct window_mode_entry *wme,
     struct screen_write_ctx *ctx)
 {
-	struct window_pane		*wp = wme->wp;
 	struct window_copy_mode_data	*data = wme->data;
 	struct screen			*s = &data->screen;
-	struct options			*oo = wp->window->options;
-	struct format_tree		*ft;
-	struct grid_cell		 hgc, tgc;
+	struct grid			*gd = data->backing->grid;
 	struct capture_match		*m;
 	struct capture_hint		*h;
-	u_int				 sx, sy;
+	u_int				 sx, sy, hsize, py;
 	int				 i, n;
 
 	if (!data->capture_active)
@@ -6140,13 +6266,7 @@ window_copy_capture_draw(struct window_mode_entry *wme,
 
 	sx = screen_size_x(s);
 	sy = screen_size_y(s);
-
-	ft = format_create_defaults(NULL, NULL, NULL, NULL, wp);
-	style_apply(&hgc, oo, "copy-mode-match-style", ft);
-	hgc.flags |= GRID_FLAG_NOPALETTE;
-	style_apply(&tgc, oo, "copy-mode-current-match-style", ft);
-	tgc.flags |= GRID_FLAG_NOPALETTE;
-	format_free(ft);
+	hsize = gd->hsize;
 
 	n = data->capture_match_count;
 	if (n > data->capture_hint_count)
@@ -6166,9 +6286,18 @@ window_copy_capture_draw(struct window_mode_entry *wme,
 		if (m->sy >= sy || m->sx >= sx)
 			continue;
 
+		/* m->sy is a screen row; map back to the absolute grid row. */
+		py = hsize - data->oy + m->sy;
+
+		/* Layer 1: highlight the whole matched segment. */
+		window_copy_capture_draw_match(ctx, gd, py, m->sy, m->sx,
+		    m->ex, &data->capture_match_gc, sx);
+
+		/* Layer 2: overlay the hint label on the match start. */
 		screen_write_cursormove(ctx, m->sx, m->sy, 0);
 		window_copy_capture_draw_label(ctx, h, data->capture_input_len,
-		    &hgc, &tgc, sx - m->sx);
+		    &data->capture_hint_gc, &data->capture_typed_gc,
+		    sx - m->sx);
 	}
 }
 #endif /* ENABLE_CAPTURE_MODE */
