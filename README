@@ -93,7 +93,7 @@ expressions):
 	               ./src/main.c, ../up/dir
 	IP address     192.168.1.1
 	UUID           550e8400-e29b-41d4-a716-446655440000
-	Hex color      #ff0000
+	Hex color      #ff0000, #fff, #ff0000ff
 	MAC address    aa:bb:cc:dd:ee:ff
 	Docker SHA     sha256:abcd... (64 hex chars)
 	Memory addr    0x7fff12345678

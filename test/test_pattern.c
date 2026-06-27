@@ -226,6 +226,90 @@ TEST(match_with_alternation)
 	capture_pattern_free(&cp);
 }
 
+TEST(match_hex_color_6)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, CAPTURE_DEFAULT_PATTERNS);
+
+	matches = capture_pattern_match_line(
+		&cp, "color #ff0000 and #aBc123 end", 0, &count);
+	ASSERT_INT_EQ(count, 2, "should find 2 hex colors");
+	ASSERT_STR_EQ(matches[0].text, "#ff0000", "first hex");
+	ASSERT_STR_EQ(matches[1].text, "#aBc123", "second hex mixed case");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(match_hex_color_3)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, CAPTURE_DEFAULT_PATTERNS);
+
+	matches = capture_pattern_match_line(
+		&cp, "shorthand #fff and #1a2", 0, &count);
+	ASSERT_INT_EQ(count, 2, "should find 2 short hex colors");
+	ASSERT_STR_EQ(matches[0].text, "#fff", "3-char hex");
+	ASSERT_STR_EQ(matches[1].text, "#1a2", "3-char hex mixed case");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(match_hex_color_8)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, CAPTURE_DEFAULT_PATTERNS);
+
+	matches = capture_pattern_match_line(
+		&cp, "rgba #ff0000ff end", 0, &count);
+	ASSERT_INT_EQ(count, 1, "should find 8-char hex with alpha");
+	ASSERT_STR_EQ(matches[0].text, "#ff0000ff", "8-char hex");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(match_hex_color_boundary)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, CAPTURE_DEFAULT_PATTERNS);
+
+	/*
+	 * 6-char hex must NOT match when followed by more hex chars
+	 * (it would be a false positive inside an 8-char hex like #ff0000ff).
+	 * The 8-char pattern should claim it instead.
+	 */
+	matches = capture_pattern_match_line(
+		&cp, "color #ff0000ff here", 0, &count);
+	ASSERT_INT_EQ(count, 1, "8-char hex should claim, not 6-char");
+	ASSERT_STR_EQ(matches[0].text, "#ff0000ff", "8-char hex wins");
+
+	/*
+	 * 3-char hex must NOT match when followed by more hex chars
+	 * (it would be a false positive inside a longer hex).
+	 */
+	matches = capture_pattern_match_line(
+		&cp, "test #fff000", 0, &count);
+	ASSERT_INT_EQ(count, 1, "6-char hex should claim, not 3-char");
+	ASSERT_STR_EQ(matches[0].text, "#fff000", "6-char hex wins");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
 TEST(overlap_longer_wins)
 {
 	struct capture_match *matches;
@@ -319,6 +403,10 @@ main(void)
 	RUN_TEST(match_multiple);
 	RUN_TEST(match_none);
 	RUN_TEST(match_with_alternation);
+	RUN_TEST(match_hex_color_6);
+	RUN_TEST(match_hex_color_3);
+	RUN_TEST(match_hex_color_8);
+	RUN_TEST(match_hex_color_boundary);
 	RUN_TEST(overlap_longer_wins);
 	RUN_TEST(overlap_non_overlapping);
 	RUN_TEST(overlap_same_length_earlier_wins);
