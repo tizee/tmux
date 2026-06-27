@@ -29,44 +29,46 @@
  * The @capture-patterns user option appends additional alternations.
  * The @capture-patterns-override user option replaces this entirely.
  */
-#define CAPTURE_DEFAULT_PATTERNS                                               \
-  "https?://[^[:space:]]+"                                                     \
-  "|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"                           \
-  "|[0-9a-fA-F]{7,40}"                                                         \
-  "|/[^[:space:]]+"                                                            \
-  "|[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}"                         \
-  "|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{"  \
-  "12}"                                                                        \
-  "|#[0-9a-fA-F]{6}\\b"                                                        \
-  "|([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"                                        \
-  "|sha256:[0-9a-fA-F]{64}"                                                    \
-  "|0x[0-9a-fA-F]+"
+#define CAPTURE_DEFAULT_PATTERNS \
+	"https?://[^[:space:]]+" \
+	"|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}" \
+	"|[0-9a-fA-F]{7,40}" \
+	"|/[^[:space:]]+" \
+	"|[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}" \
+	"|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}" \
+	"-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}" \
+	"|#[0-9a-fA-F]{6}\\b" \
+	"|([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}" \
+	"|sha256:[0-9a-fA-F]{64}" \
+	"|0x[0-9a-fA-F]+"
 
 /* A compiled pattern (single regex with alternations). */
 struct capture_pattern {
-  regex_t re;
-  int valid; /* 1 if compiled successfully */
+	regex_t	 re;
+	int	 valid;		/* 1 if compiled successfully */
 };
 
 /* A single match result from pattern scanning. */
 struct capture_match {
-  u_int sx, sy; /* start column, row */
-  u_int ex, ey; /* end column, row (exclusive) */
-  char *text;   /* matched text (caller must free) */
+	u_int	 sx, sy;	/* start column, row */
+	u_int	 ex, ey;	/* end column, row (exclusive) */
+	char	*text;		/* matched text (caller must free) */
 };
 
 /* Compile a regex pattern string. Returns 0 on success, -1 on error. */
-int capture_pattern_compile(struct capture_pattern *, const char *);
-void capture_pattern_free(struct capture_pattern *);
+int			 capture_pattern_compile(struct capture_pattern *,
+			     const char *);
+void			 capture_pattern_free(struct capture_pattern *);
 
 /* Match pattern against a single line of text. Returns malloc'd array. */
-struct capture_match *capture_pattern_match_line(struct capture_pattern *,
-                                                 const char *, u_int, int *);
+struct capture_match	*capture_pattern_match_line(struct capture_pattern *,
+			     const char *, u_int, int *);
 
 /* Resolve overlapping matches using length-based rule. */
-void capture_pattern_resolve_overlaps(struct capture_match *, int *);
+void			 capture_pattern_resolve_overlaps(struct capture_match *,
+			     int *);
 
 /* Free a match array. */
-void capture_match_free(struct capture_match *, int);
+void			 capture_match_free(struct capture_match *, int);
 
 #endif /* CAPTURE_PATTERN_H */

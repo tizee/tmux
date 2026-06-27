@@ -27,8 +27,8 @@
 
 /* A single hint label. */
 struct capture_hint {
-  char *label; /* e.g. "a", "gh", "jkl" */
-  int len;     /* length of label (1..CAPTURE_HINT_MAX_LEN) */
+	char	*label;		/* e.g. "a", "gh", "jkl" */
+	int	 len;		/* length of label (1..CAPTURE_HINT_MAX_LEN) */
 };
 
 /*
@@ -44,7 +44,7 @@ struct capture_hint {
  * (and sets *count to 0) only on bad input or if num_hints exceeds the
  * representable capacity K^CAPTURE_HINT_MAX_LEN.
  */
-struct capture_hint *capture_hint_generate(int, const char *, int *);
-void capture_hint_free(struct capture_hint *, int);
+struct capture_hint	*capture_hint_generate(int, const char *, int *);
+void			 capture_hint_free(struct capture_hint *, int);
 
 #endif /* CAPTURE_HINT_H */
