@@ -380,6 +380,7 @@ struct window_copy_mode_data {
 	struct capture_pattern	 capture_pattern;
 	struct capture_match	*capture_matches;
 	int			 capture_match_count;
+	int			*capture_match_hint;	/* per-match hint index */
 	struct capture_hint	*capture_hints;
 	int			 capture_hint_count;
 	char			*capture_hint_keys;
@@ -5855,6 +5856,9 @@ window_copy_capture_clear(struct window_copy_mode_data *data)
 	data->capture_matches = NULL;
 	data->capture_match_count = 0;
 
+	free(data->capture_match_hint);
+	data->capture_match_hint = NULL;
+
 	capture_hint_free(data->capture_hints, data->capture_hint_count);
 	data->capture_hints = NULL;
 	data->capture_hint_count = 0;
@@ -6008,7 +6012,7 @@ window_copy_capture_start(struct window_mode_entry *wme, struct client *c)
 	char				*pattern_str, *line;
 	const char			*hint_keys;
 	u_int				 sx, sy, hsize, py, row;
-	int				 line_n;
+	int				 line_n, i, j, unique;
 
 	window_copy_capture_clear(data);
 
@@ -6085,7 +6089,31 @@ window_copy_capture_start(struct window_mode_entry *wme, struct client *c)
 		return;
 	}
 
-	data->capture_hints = capture_hint_generate(data->capture_match_count,
+	/*
+	 * Group matches by their text content so identical matches share a
+	 * single hint label. capture_match_hint[i] holds the hint index for
+	 * match i; unique counts the number of distinct contents in order of
+	 * first appearance.
+	 */
+	data->capture_match_hint = xreallocarray(NULL,
+	    (size_t)data->capture_match_count,
+	    sizeof *data->capture_match_hint);
+	unique = 0;
+	for (i = 0; i < data->capture_match_count; i++) {
+		data->capture_match_hint[i] = -1;
+		for (j = 0; j < i; j++) {
+			if (strcmp(data->capture_matches[i].text,
+			    data->capture_matches[j].text) == 0) {
+				data->capture_match_hint[i] =
+				    data->capture_match_hint[j];
+				break;
+			}
+		}
+		if (data->capture_match_hint[i] == -1)
+			data->capture_match_hint[i] = unique++;
+	}
+
+	data->capture_hints = capture_hint_generate(unique,
 	    data->capture_hint_keys, &data->capture_hint_count);
 	if (data->capture_hints == NULL) {
 		window_copy_capture_clear(data);
@@ -6153,7 +6181,7 @@ window_copy_capture_key(struct window_mode_entry *wme, struct client *c,
 	struct capture_hint		*h;
 	char				*buf;
 	size_t				 len;
-	int				 i, prefixes, set_paste, set_clip;
+	int				 i, j, prefixes, set_paste, set_clip;
 
 	if (data->capture_input_len >= CAPTURE_HINT_MAX_LEN) {
 		data->capture_input_len = 0;
@@ -6170,8 +6198,16 @@ window_copy_capture_key(struct window_mode_entry *wme, struct client *c,
 		    (size_t)data->capture_input_len) != 0)
 			continue;
 		if (h->len == data->capture_input_len) {
-			/* Exact match: copy, disarm and signal exit. */
-			m = &data->capture_matches[i];
+			/* Exact match: find a match with this hint and copy. */
+			m = NULL;
+			for (j = 0; j < data->capture_match_count; j++) {
+				if (data->capture_match_hint[j] == i) {
+					m = &data->capture_matches[j];
+					break;
+				}
+			}
+			if (m == NULL)
+				break;
 			buf = m->text;
 			len = strlen(buf);
 			set_paste = 1;
@@ -6259,7 +6295,7 @@ window_copy_capture_draw(struct window_mode_entry *wme,
 	struct capture_match		*m;
 	struct capture_hint		*h;
 	u_int				 sx, sy, hsize, py;
-	int				 i, n;
+	int				 i;
 
 	if (!data->capture_active)
 		return;
@@ -6268,13 +6304,9 @@ window_copy_capture_draw(struct window_mode_entry *wme,
 	sy = screen_size_y(s);
 	hsize = gd->hsize;
 
-	n = data->capture_match_count;
-	if (n > data->capture_hint_count)
-		n = data->capture_hint_count;
-
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < data->capture_match_count; i++) {
 		m = &data->capture_matches[i];
-		h = &data->capture_hints[i];
+		h = &data->capture_hints[data->capture_match_hint[i]];
 
 		/* Hide hints that no longer match the typed prefix. */
 		if (data->capture_input_len > 0 &&

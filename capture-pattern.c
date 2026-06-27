@@ -57,6 +57,47 @@ capture_pattern_free(struct capture_pattern *cp)
 }
 
 /*
+ * Trim trailing characters that cannot legitimately end a URL or path. Plain
+ * sentence punctuation (.,;:!?'") is always stripped. Closing brackets are
+ * stripped only when unbalanced within the match, so URLs that legitimately
+ * contain balanced brackets (e.g. Wikipedia "..._(disambiguation)") survive
+ * while a trailing ")" from surrounding prose (e.g. "(youtube.com)") is
+ * removed. Returns the adjusted end offset (relative to s).
+ */
+static regoff_t
+capture_pattern_trim_end(const char *s, regoff_t so, regoff_t eo)
+{
+	char	 c, open;
+	regoff_t k;
+	int	 bal;
+
+	while (eo > so) {
+		c = s[eo - 1];
+		if (c == '.' || c == ',' || c == ';' || c == ':' ||
+		    c == '!' || c == '?' || c == '\'' || c == '"') {
+			eo--;
+			continue;
+		}
+		if (c == ')' || c == ']' || c == '}') {
+			open = (c == ')') ? '(' : (c == ']') ? '[' : '{';
+			bal = 0;
+			for (k = so; k < eo; k++) {
+				if (s[k] == open)
+					bal++;
+				else if (s[k] == c)
+					bal--;
+			}
+			if (bal < 0) {
+				eo--;
+				continue;
+			}
+		}
+		break;
+	}
+	return (eo);
+}
+
+/*
  * Match a compiled pattern against a single line of text.
  * Returns an array of matches, sets *count.
  */
@@ -81,7 +122,7 @@ capture_pattern_match_line(struct capture_pattern *cp, const char *line,
 	    offset > 0 ? REG_NOTBOL : 0) == 0) {
 		struct capture_match	*new_matches;
 		struct capture_match	*m;
-		regoff_t		 so, eo;
+		regoff_t		 so, eo, teo;
 
 		so = pmatch.rm_so;
 		eo = pmatch.rm_eo;
@@ -94,6 +135,17 @@ capture_pattern_match_line(struct capture_pattern *cp, const char *line,
 			continue;
 		}
 
+		/*
+		 * Strip trailing punctuation that cannot end a URL/path. Use
+		 * the trimmed end for the stored match but advance past the
+		 * full regex match so the stripped characters are not re-tried.
+		 */
+		teo = capture_pattern_trim_end(line + offset, so, eo);
+		if (teo == so) {
+			offset += (size_t)eo;
+			continue;
+		}
+
 		new_matches = realloc(matches,
 		    (size_t)(nmatches + 1) * sizeof *matches);
 		if (new_matches == NULL)
@@ -103,10 +155,10 @@ capture_pattern_match_line(struct capture_pattern *cp, const char *line,
 		m = &matches[nmatches];
 		m->sx = (u_int)(offset + (size_t)so);
 		m->sy = line_no;
-		m->ex = (u_int)(offset + (size_t)eo);
+		m->ex = (u_int)(offset + (size_t)teo);
 		m->ey = line_no;
 		m->text = strndup(line + offset + (size_t)so,
-		    (size_t)(eo - so));
+		    (size_t)(teo - so));
 		if (m->text == NULL)
 			goto error;
 

@@ -310,6 +310,79 @@ TEST(match_hex_color_boundary)
 	capture_pattern_free(&cp);
 }
 
+TEST(match_url_trailing_paren)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, "https?://[^[:space:]]+");
+
+	/* A trailing ) from surrounding prose must not be part of the URL. */
+	matches = capture_pattern_match_line(
+		&cp, "see (https://youtube.com) now", 0, &count);
+	ASSERT_INT_EQ(count, 1, "should find 1 URL");
+	ASSERT_STR_EQ(matches[0].text, "https://youtube.com",
+		      "trailing ) should be stripped");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(match_url_trailing_punct)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, "https?://[^[:space:]]+");
+
+	/* Sentence-ending punctuation must be trimmed. */
+	matches = capture_pattern_match_line(
+		&cp, "visit https://example.com/path.", 0, &count);
+	ASSERT_INT_EQ(count, 1, "should find 1 URL");
+	ASSERT_STR_EQ(matches[0].text, "https://example.com/path",
+		      "trailing . should be stripped");
+
+	matches = capture_pattern_match_line(
+		&cp, "go to https://example.com, please", 0, &count);
+	ASSERT_INT_EQ(count, 1, "should find 1 URL");
+	ASSERT_STR_EQ(matches[0].text, "https://example.com",
+		      "trailing , should be stripped");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(match_url_balanced_paren)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, "https?://[^[:space:]]+");
+
+	/* Balanced parens inside a URL (e.g. Wikipedia) must be preserved. */
+	matches = capture_pattern_match_line(
+		&cp, "see https://en.wikipedia.org/wiki/Foo_(disambiguation)",
+		0, &count);
+	ASSERT_INT_EQ(count, 1, "should find 1 URL");
+	ASSERT_STR_EQ(matches[0].text,
+		      "https://en.wikipedia.org/wiki/Foo_(disambiguation)",
+		      "balanced parens should be kept");
+
+	/* Balanced parens kept, but an extra unbalanced ) is trimmed. */
+	matches = capture_pattern_match_line(
+		&cp, "(https://en.wikipedia.org/wiki/Foo_(bar))", 0, &count);
+	ASSERT_INT_EQ(count, 1, "should find 1 URL");
+	ASSERT_STR_EQ(matches[0].text,
+		      "https://en.wikipedia.org/wiki/Foo_(bar)",
+		      "only the outer unbalanced ) should be stripped");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
 TEST(overlap_longer_wins)
 {
 	struct capture_match *matches;
@@ -407,6 +480,9 @@ main(void)
 	RUN_TEST(match_hex_color_3);
 	RUN_TEST(match_hex_color_8);
 	RUN_TEST(match_hex_color_boundary);
+	RUN_TEST(match_url_trailing_paren);
+	RUN_TEST(match_url_trailing_punct);
+	RUN_TEST(match_url_balanced_paren);
 	RUN_TEST(overlap_longer_wins);
 	RUN_TEST(overlap_non_overlapping);
 	RUN_TEST(overlap_same_length_earlier_wins);
