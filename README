@@ -24,7 +24,7 @@ See the Capture Mode section below for details.
 
 * Capture Mode
 
-Capture mode is a built-in alternative to the external tmux-capture plugin. It
+Capture mode is a built-in alternative to the external [tmux-capture](https://github.com/tizee/tmux-capture) plugin. It
 overlays keyboard hints on copy mode, detecting URLs, file paths, git SHAs,
 email addresses, and more -- all configurable via regex patterns in tmux.conf.
 Because it builds on copy mode, it works on whatever is currently visible,
@@ -83,30 +83,67 @@ matched prefix of the hint is shown with @capture-hint-typed-style.
 
 ** Built-in Patterns
 
-Default patterns detected automatically:
+The following patterns are detected by default (POSIX extended regular
+expressions):
 
 	URL            https://example.com/path
-	GitHub repo    user/repo, git@github.com:user/repo.git
-	Git commit     a1b2c3d4 (7-40 hex chars)
 	Email          user@example.com
-	File path      /home/user/file.txt, ~/path\ with\ spaces/
+	Git commit     a1b2c3d4 (7-40 hex chars)
+	File path      /home/user/file.txt, ~/.config/tmux/tmux.conf,
+	               ./src/main.c, ../up/dir
 	IP address     192.168.1.1
-	IPv6 address   2001:db8::1
-	MAC address    aa:bb:cc:dd:ee:ff
 	UUID           550e8400-e29b-41d4-a716-446655440000
 	Hex color      #ff0000
+	MAC address    aa:bb:cc:dd:ee:ff
 	Docker SHA     sha256:abcd... (64 hex chars)
 	Memory addr    0x7fff12345678
-	IPFS hash      QmX1eWnvmPiYT...
-	Markdown link  [text](url) -- extracts URL
 
-** Custom Regex Examples
+File paths are matched with leading ~, ./ or ../ included. Use
+@capture-patterns to add more (for example IPv6, GitHub repos, or Markdown
+links), or @capture-patterns-override to replace the built-in set entirely.
 
-	# Match JIRA ticket IDs like PROJ-1234
-	set -g @capture-patterns "[A-Z]+-[0-9]+"
+** Customizing Patterns
 
-	# Match Go module imports
-	set -g @capture-patterns '[a-zA-Z0-9./-]+\.[a-zA-Z]{2,}'
+Two user options control which text capture mode recognises:
+
+	@capture-patterns           Extra alternatives appended to the built-in
+	                            patterns. Your value is joined to the
+	                            defaults with `|`, so the built-ins keep
+	                            working and yours are added on top.
+
+	@capture-patterns-override  Replaces the built-in patterns entirely.
+	                            Only the text your regex matches is detected.
+
+Both options take a single POSIX extended regular expression (ERE), the same
+flavour tmux uses for copy-mode search. Important syntax notes:
+
+	- Use `|` for alternatives:  pat1|pat2|pat3
+	- Use POSIX classes, not Perl shorthands:
+	      [[:digit:]] not \d,  [[:alnum:]] not \w,  [[:space:]] for space
+	- Perl extensions are NOT supported: no \d \w \b, no (?:...) groups,
+	  no lookahead/lookbehind. Use plain groups ( ... ) instead.
+	- Escape regex metacharacters with a backslash, e.g. \. for a literal dot.
+	- Matching is per line; on overlap the longer match wins, then the
+	  earlier one. An invalid regex disables capture for that pane (check
+	  the server log with `tmux -vv`).
+
+Examples (append to the built-ins):
+
+	# JIRA ticket IDs like PROJ-1234
+	set -g @capture-patterns "[A-Z]+-[[:digit:]]+"
+
+	# IPv6 addresses (simplified)
+	set -g @capture-patterns "([[:xdigit:]]{1,4}:){2,}[[:xdigit:]]{1,4}"
+
+	# Kubernetes-style names: my-app-7d8f9
+	set -g @capture-patterns "[[:alnum:]]+(-[[:alnum:]]+)+"
+
+	# Combine several at once
+	set -g @capture-patterns "[A-Z]+-[[:digit:]]+|TODO|FIXME"
+
+Replace the built-ins entirely (only match quoted strings):
+
+	set -g @capture-patterns-override '"[^"]*"'
 
 * Dependencies
 

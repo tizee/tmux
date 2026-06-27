@@ -4232,11 +4232,16 @@ to dismiss the overlay without copying.
 The set of recognised patterns is controlled by the following user options:
 .Bl -tag -width Ds
 .It Ic @capture-patterns Ar regex
-A POSIX extended regular expression, appended as additional alternations to the
-built-in patterns.
+A POSIX extended regular expression appended as an additional alternation to
+the built-in patterns.
+The value is joined to the defaults with
+.Ql \&| ,
+so the built-in patterns continue to work and the user patterns are added on
+top.
 .It Ic @capture-patterns-override Ar regex
 A POSIX extended regular expression that replaces the built-in patterns
 entirely.
+Only text matched by this expression is detected.
 .It Ic @capture-hint-keys Ar keys
 The set of keys used to build hint labels.
 Defaults to
@@ -4261,6 +4266,42 @@ Defaults to
 .Pp
 When two matches overlap, the longer match is preferred; for equal lengths the
 earlier match wins.
+.Pp
+Both pattern options take a single POSIX extended regular expression (ERE),
+the same flavour used by copy-mode search.
+Use
+.Ql \&|
+to separate alternatives and POSIX character classes such as
+.Ql [[:digit:]] ,
+.Ql [[:alnum:]]
+and
+.Ql [[:xdigit:]]
+rather than the Perl shorthands
+.Ql \ed ,
+.Ql \ew
+or
+.Ql \eb ,
+which are not supported.
+Non-capturing groups
+.Ql (?:... )
+and lookaround are likewise unavailable; use plain groups
+.Ql (\ ... )
+instead.
+Escape literal metacharacters with a backslash, for example
+.Ql \e.\&
+for a dot.
+Matching is performed per line.
+An invalid expression disables capture for that pane; run the server with
+.Ql tmux -vv
+to see the compile error in the log.
+For example, to also capture JIRA-style ticket IDs and TODO markers:
+.Bd -literal -offset indent
+set -g @capture-patterns "[A-Z]+-[[:digit:]]+|TODO|FIXME"
+.Ed
+To match only quoted strings and nothing else:
+.Bd -literal -offset indent
+set -g @capture-patterns-override '"[^"]*"'
+.Ed
 .\" CAPTURE-MODE-SECTION-END
 .Sh KEY BINDINGS
 .Nm
