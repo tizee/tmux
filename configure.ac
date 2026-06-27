@@ -493,6 +493,16 @@ if test "x$enable_sixel" = xyes; then
 fi
 AM_CONDITIONAL(ENABLE_SIXEL, [test "x$enable_sixel" = xyes])
 
+# Enable capture mode (tizee fork: hint-based copy-mode text capture).
+AC_ARG_ENABLE(
+	capture-mode,
+	AS_HELP_STRING(--enable-capture-mode, enable capture mode (tizee fork))
+)
+if test "x$enable_capture_mode" = xyes; then
+	AC_DEFINE(ENABLE_CAPTURE_MODE)
+fi
+AM_CONDITIONAL(ENABLE_CAPTURE_MODE, [test "x$enable_capture_mode" = xyes])
+
 # Check for b64_ntop. If we have b64_ntop, we assume b64_pton as well.
 AC_MSG_CHECKING(for b64_ntop)
 AC_LINK_IFELSE([AC_LANG_PROGRAM(

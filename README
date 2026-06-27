@@ -6,6 +6,92 @@ screen and continue running in the background, then later reattached.
 
 This release runs on OpenBSD, FreeBSD, NetBSD, Linux, macOS and Solaris.
 
+* Tizee Fork
+
+This is tizee's personal fork of tmux. It adds a native capture mode -- a
+built-in hint-based text selection feature that supersedes the external
+tmux-capture plugin (https://github.com/tizee/tmux-capture). Capture mode is
+an overlay on top of copy mode, requires no external dependencies, and
+supports custom regex patterns via tmux.conf.
+
+Capture mode is an opt-in build feature: it is compiled in only when tmux is
+configured with --enable-capture-mode. When that flag is omitted the fork
+builds and behaves exactly like upstream tmux (no capture commands, key
+bindings, or manual sections). This makes it easy to confirm whether a given
+build is the fork with capture mode enabled.
+
+See the Capture Mode section below for details.
+
+* Capture Mode
+
+Capture mode is a built-in alternative to the external tmux-capture plugin. It
+overlays keyboard hints on copy mode, detecting URLs, file paths, git SHAs,
+email addresses, and more -- all configurable via regex patterns in tmux.conf.
+Because it builds on copy mode, it works on whatever is currently visible,
+including scrollback you have scrolled into view.
+
+It must be enabled at build time with --enable-capture-mode (see Installation).
+When enabled, the CAPTURE MODE section is also added to the tmux.1 manual.
+
+** Quick Start
+
+Enter capture mode: Prefix + Y (enters copy mode and arms the hint overlay).
+While already in copy mode, press Y to arm the overlay on the current view.
+
+Type the hint next to the text you want. The selection is copied to the paste
+buffer and the system clipboard automatically. Press q, Escape or C-c to
+dismiss the overlay (you remain in copy mode).
+
+** Configuration
+
+Add to ~/.tmux.conf:
+
+	# Keybindings (defaults: Prefix + Y, and Y inside copy mode)
+	bind-key Y { copy-mode ; send -X capture }
+	bind-key -Tcopy-mode    Y { send -X capture }
+	bind-key -Tcopy-mode-vi Y { send -X capture }
+
+	# Append custom regex patterns to the built-in list
+	set -g @capture-patterns "regex1|regex2|..."
+
+	# Override patterns entirely (replaces built-in patterns)
+	set -g @capture-patterns-override "patternA|patternB|..."
+
+	# Keyboard keys used for hints (default: asdfjklgh). Hints use the
+	# shortest prefix-free distribution, growing to 2 or 3 characters only
+	# when there are more matches than single keys.
+	set -g @capture-hint-keys "asdfjklgh"
+
+Hint labels are styled with the copy-mode-match-style and
+copy-mode-current-match-style options.
+
+** Built-in Patterns
+
+Default patterns detected automatically:
+
+	URL            https://example.com/path
+	GitHub repo    user/repo, git@github.com:user/repo.git
+	Git commit     a1b2c3d4 (7-40 hex chars)
+	Email          user@example.com
+	File path      /home/user/file.txt, ~/path\ with\ spaces/
+	IP address     192.168.1.1
+	IPv6 address   2001:db8::1
+	MAC address    aa:bb:cc:dd:ee:ff
+	UUID           550e8400-e29b-41d4-a716-446655440000
+	Hex color      #ff0000
+	Docker SHA     sha256:abcd... (64 hex chars)
+	Memory addr    0x7fff12345678
+	IPFS hash      QmX1eWnvmPiYT...
+	Markdown link  [text](url) -- extracts URL
+
+** Custom Regex Examples
+
+	# Match JIRA ticket IDs like PROJ-1234
+	set -g @capture-patterns "[A-Z]+-[0-9]+"
+
+	# Match Go module imports
+	set -g @capture-patterns '[a-zA-Z0-9./-]+\.[a-zA-Z]{2,}'
+
 * Dependencies
 
 tmux depends on libevent 2.x, available from:
@@ -29,8 +115,19 @@ To build and install tmux from a release tarball, use:
 tmux can use the utempter library to update utmp(5), if it is installed - run
 configure with --enable-utempter to enable this.
 
-To get and build the latest from version control - note that this requires
-autoconf, automake and pkg-config:
+To get and build this fork (tizee/tmux) with capture mode - note that this
+requires autoconf, automake and pkg-config:
+
+	$ git clone https://github.com/tizee/tmux.git
+	$ cd tmux
+	$ sh autogen.sh
+	$ ./configure --enable-capture-mode && make
+	$ sudo make install
+
+Omit --enable-capture-mode to build a plain upstream-equivalent tmux without
+the capture feature.
+
+To get and build the latest upstream tmux from version control:
 
 	$ git clone https://github.com/tmux/tmux.git
 	$ cd tmux

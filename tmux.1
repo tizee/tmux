@@ -1909,6 +1909,37 @@ Move to the bottom line.
 (emacs: Escape)
 .Xc
 Exit copy mode.
+.\" CAPTURE-MODE-START
+.It Xo
+.Ic capture
+(Y)
+.Xc
+Scan the visible part of the pane for text matching the capture patterns and
+overlay a single- or multi-character hint on each match.
+This is part of the
+.Em capture mode
+feature (a tizee fork addition, enabled with
+.Ic --enable-capture-mode ) .
+See the
+.Sx CAPTURE MODE
+section for details.
+.It Xo
+.Ic capture-key Ar key
+.Xc
+Feed a key into the active capture hint matcher.
+When the typed keys uniquely identify a hint, the matched text is copied to the
+top paste buffer and the system clipboard (subject to
+.Ic set-clipboard )
+and the overlay is dismissed.
+This command is bound automatically while capture mode is active and is not
+normally used directly.
+.It Xo
+.Ic capture-cancel
+(q, Escape, C-c)
+.Xc
+Dismiss the capture hint overlay without copying, returning to ordinary copy
+mode.
+.\" CAPTURE-MODE-END
 .It Xo
 .Ic clear\-selection
 (vi: Escape)
@@ -4126,6 +4157,77 @@ if
 is specified and the window is linked to only one session, it is unlinked and
 destroyed.
 .El
+.\" CAPTURE-MODE-SECTION-START
+.Sh CAPTURE MODE
+.Em Capture mode
+is an addition in tizee's
+.Nm
+fork, built on top of copy mode and enabled at build time with the
+.Ic --enable-capture-mode
+configure flag.
+It provides hint-based selection of interesting text (URLs, file paths, git
+SHAs, email addresses, IP addresses and more) visible in a pane, similar to the
+external tmux-capture plugin but without external dependencies.
+.Pp
+Capture mode is entered with
+.Ic copy-mode
+followed by the
+.Ic capture
+copy-mode command.
+By default it is bound to
+.Ic Y
+both from the prefix table (which enters copy mode first) and from within copy
+mode:
+.Bd -literal -offset indent
+bind-key Y { copy-mode ; send-keys -X capture }
+bind-key -T copy-mode    Y { send-keys -X capture }
+bind-key -T copy-mode-vi Y { send-keys -X capture }
+.Ed
+.Pp
+When armed, the visible region of the pane is scanned and each match is
+overlaid with a short, prefix-free hint label drawn using the
+.Ic copy-mode-match-style
+and
+.Ic copy-mode-current-match-style
+options.
+Because capture mode is an overlay on copy mode, it operates on whatever is
+currently visible, including scrollback that has been scrolled into view.
+.Pp
+Type the hint next to the desired text.
+The label keys come from the
+.Ic @capture-hint-keys
+option (default
+.Ql asdfjklgh ) ;
+hints use the shortest possible prefix-free distribution and grow to two or
+three characters only when there are more matches than single keys.
+On a unique match, the text is copied to the top paste buffer and, if
+.Ic set-clipboard
+is enabled, to the system clipboard, and the overlay is dismissed.
+Press
+.Ic q ,
+.Ic Escape
+or
+.Ic C-c
+to dismiss the overlay without copying.
+.Pp
+The set of recognised patterns is controlled by the following user options:
+.Bl -tag -width Ds
+.It Ic @capture-patterns Ar regex
+A POSIX extended regular expression, appended as additional alternations to the
+built-in patterns.
+.It Ic @capture-patterns-override Ar regex
+A POSIX extended regular expression that replaces the built-in patterns
+entirely.
+.It Ic @capture-hint-keys Ar keys
+The set of keys used to build hint labels.
+Defaults to
+.Ql asdfjklgh .
+At least two keys are required.
+.El
+.Pp
+When two matches overlap, the longer match is preferred; for equal lengths the
+earlier match wins.
+.\" CAPTURE-MODE-SECTION-END
 .Sh KEY BINDINGS
 .Nm
 allows a command to be bound to most keys, with or without a prefix key.

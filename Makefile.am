@@ -1,6 +1,6 @@
 # Obvious program stuff.
 bin_PROGRAMS = tmux
-CLEANFILES = tmux.1.mdoc tmux.1.man cmd-parse.c
+CLEANFILES = tmux.1.mdoc tmux.1.man tmux.1.filtered cmd-parse.c
 
 # Distribution tarball options.
 EXTRA_DIST = \
@@ -246,6 +246,22 @@ if ENABLE_SIXEL
 dist_tmux_SOURCES += image.c image-sixel.c
 endif
 
+# Enable capture mode (tizee fork).
+if ENABLE_CAPTURE_MODE
+dist_tmux_SOURCES += \
+	capture-hint.c \
+	capture-hint.h \
+	capture-pattern.c \
+	capture-pattern.h
+# Capture mode docs are kept as-is in the installed manual.
+CAPTURE_MAN_FILTER = cat
+else
+# Strip the capture mode sections from the installed manual.
+CAPTURE_MAN_FILTER = \
+	sed -e '/^\.\\" CAPTURE-MODE-START$$/,/^\.\\" CAPTURE-MODE-END$$/d' \
+	    -e '/^\.\\" CAPTURE-MODE-SECTION-START$$/,/^\.\\" CAPTURE-MODE-SECTION-END$$/d'
+endif
+
 # Add bits for fuzzing if enabled.
 if NEED_FUZZING
 check_PROGRAMS = \
@@ -265,13 +281,15 @@ endif
 
 # Install tmux.1 in the right format.
 install-exec-hook:
+	$(CAPTURE_MAN_FILTER) <$(srcdir)/tmux.1 >$(srcdir)/tmux.1.filtered; \
 	if test x@MANFORMAT@ = xmdoc; then \
-		sed -e "s|@SYSCONFDIR@|$(sysconfdir)|g" $(srcdir)/tmux.1 \
+		sed -e "s|@SYSCONFDIR@|$(sysconfdir)|g" $(srcdir)/tmux.1.filtered \
 			>$(srcdir)/tmux.1.mdoc; \
 	else \
-		sed -e "s|@SYSCONFDIR@|$(sysconfdir)|g" $(srcdir)/tmux.1| \
+		sed -e "s|@SYSCONFDIR@|$(sysconfdir)|g" $(srcdir)/tmux.1.filtered| \
 			$(AWK) -f $(srcdir)/mdoc2man.awk >$(srcdir)/tmux.1.man; \
 	fi
+	rm -f $(srcdir)/tmux.1.filtered
 	$(mkdir_p) $(DESTDIR)$(mandir)/man1
 	$(INSTALL_DATA) $(srcdir)/tmux.1.@MANFORMAT@ \
 		$(DESTDIR)$(mandir)/man1/tmux.1
