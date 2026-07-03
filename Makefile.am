@@ -1,12 +1,22 @@
 # Obvious program stuff.
 bin_PROGRAMS = tmux
-CLEANFILES = tmux.1.mdoc tmux.1.man tmux.1.filtered cmd-parse.c
+CLEANFILES = tmux.1.mdoc tmux.1.man tmux.1.filtered cmd-parse.c version-git.h
 
 # Distribution tarball options.
 EXTRA_DIST = \
 	CHANGES README README.ja COPYING example_tmux.conf \
-	osdep-*.c mdoc2man.awk tmux.1
+	osdep-*.c mdoc2man.awk tmux.1 git-version.sh
 dist_EXTRA_tmux_SOURCES = compat/*.[ch]
+
+# Generated git-aware version header (tizee fork). Regenerated every build via
+# the FORCE prerequisite; git-version.sh rewrites the file only when its content
+# changes, so tmux.c is not needlessly recompiled. Outside a git checkout (e.g.
+# a release tarball) the script emits an empty hash and the version stays plain.
+BUILT_SOURCES = version-git.h
+version-git.h: FORCE
+	$(SHELL) $(srcdir)/git-version.sh $(srcdir) $@
+FORCE:
+.PHONY: FORCE
 
 # Preprocessor flags.
 AM_CPPFLAGS += @XOPEN_DEFINES@ \
@@ -212,6 +222,8 @@ dist_tmux_SOURCES = \
 	tty.c \
 	utf8-combined.c \
 	utf8.c \
+	version-format.c \
+	version-format.h \
 	window-border.c \
 	window-buffer.c \
 	window-client.c \

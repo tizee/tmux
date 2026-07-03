@@ -32,6 +32,8 @@
 #include <unistd.h>
 
 #include "tmux.h"
+#include "version-format.h"
+#include "version-git.h"
 
 struct options	*global_options;	/* server options */
 struct options	*global_s_options;	/* session options */
@@ -379,7 +381,15 @@ find_home(void)
 const char *
 getversion(void)
 {
-	return (TMUX_VERSION);
+	static char	 ver[128];
+	static int	 done;
+
+	if (!done) {
+		version_format_short(ver, sizeof ver, TMUX_VERSION,
+		    TMUX_GIT_HASH);
+		done = 1;
+	}
+	return (ver);
 }
 
 int
@@ -446,9 +456,14 @@ main(int argc, char **argv)
 			break;
 		case 'h':
 			usage(0);
-		case 'V':
-			printf("tmux %s\n", getversion());
+		case 'V': {
+			char	 full[160];
+
+			version_format_full(full, sizeof full, TMUX_VERSION,
+			    TMUX_GIT_HASH, (time_t)TMUX_GIT_EPOCH, time(NULL));
+			printf("tmux %s\n", full);
 			exit(0);
+		}
 		case 'l':
 			flags |= CLIENT_LOGIN;
 			break;

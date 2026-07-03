@@ -24,3 +24,4 @@ fuzz/*-fuzzer
 tags
 tmux
 tmux.1.*
+version-git.h

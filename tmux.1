@@ -228,6 +228,14 @@ or
 Report the
 .Nm
 version.
+When built from a git checkout, as this fork is, the reported version is stamped
+with the short commit hash and the commit's release time, for example:
+.Bd -literal -offset indent
+tmux next-3.7+g94c8b83 (released 2026-07-03T10:53:22Z, 6 hours ago)
+.Ed
+A build produced outside a git checkout, such as a release tarball, reports the
+plain version with no commit suffix, matching upstream
+.Nm .
 .It Fl v
 Request verbose logging.
 Log messages will be saved into

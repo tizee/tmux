@@ -22,7 +22,9 @@ build is the fork with capture mode enabled.
 
 The fork also adds a ring-buffer crash logger, on by default, which writes a
 backtrace plus a tail of recent internal log lines whenever the server crashes.
-See the Capture Mode and Crash Logging sections below for details.
+Builds made from a git checkout additionally stamp the source commit into the
+reported version (tmux -V). See the Capture Mode, Crash Logging, and Version
+Stamping sections below for details.
 
 * Capture Mode
 
@@ -195,6 +197,24 @@ exist after a crash.
 Build with --disable-crash-log to omit the feature entirely (the build then
 behaves like upstream in this respect). On platforms without execinfo.h /
 backtrace, crash logging is skipped automatically.
+
+* Version Stamping
+
+Because you run a self-maintained build, this fork makes tmux -V report exactly
+which commit the binary was built from, so a running tmux can always be traced
+back to its source:
+
+	$ tmux -V
+	tmux next-3.7+g94c8b83 (released 2026-07-03T10:53:22Z, 6 hours ago)
+
+The +g<hash> suffix is the short commit hash; "released" is the commit's own
+date (in UTC), followed by a human-readable relative time. The short
+next-3.7+g<hash> form is also what #{version} and TERM_PROGRAM_VERSION report.
+
+The commit is captured at build time: a plain "make" after new commits refreshes
+the hash. This needs no configuration and is not gated behind a build flag. When
+tmux is built outside a git checkout (for example from a release tarball) the
+version falls back to the plain upstream string with no commit suffix.
 
 * Dependencies
 
