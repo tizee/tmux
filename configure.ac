@@ -503,6 +503,30 @@ if test "x$enable_capture_mode" = xyes; then
 fi
 AM_CONDITIONAL(ENABLE_CAPTURE_MODE, [test "x$enable_capture_mode" = xyes])
 
+# Enable ring-buffer crash logging (tizee fork: crash handler + log ring).
+# Default ON for this fork; use --disable-crash-log to build without it.
+# Falls back to disabled (no error) on platforms lacking execinfo/backtrace,
+# unless explicitly requested with --enable-crash-log.
+AC_ARG_ENABLE(
+	crash-log,
+	AS_HELP_STRING(--disable-crash-log, disable ring-buffer crash logging (tizee fork; default on))
+)
+if test "x$enable_crash_log" != xno; then
+	AC_CHECK_HEADERS([execinfo.h], [found_execinfo=yes], [found_execinfo=no])
+	if test "x$found_execinfo" = xyes; then
+		AC_CHECK_FUNCS([backtrace backtrace_symbols_fd])
+		AC_DEFINE(ENABLE_CRASH_LOG)
+		enable_crash_log=yes
+	else
+		if test "x$enable_crash_log" = xyes; then
+			AC_MSG_ERROR([crash-log needs execinfo.h])
+		fi
+		AC_MSG_WARN([execinfo.h not found; crash logging disabled])
+		enable_crash_log=no
+	fi
+fi
+AM_CONDITIONAL(ENABLE_CRASH_LOG, [test "x$enable_crash_log" = xyes])
+
 # Check for b64_ntop. If we have b64_ntop, we assume b64_pton as well.
 AC_MSG_CHECKING(for b64_ntop)
 AC_LINK_IFELSE([AC_LANG_PROGRAM(

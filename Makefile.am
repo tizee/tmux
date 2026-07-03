@@ -263,6 +263,13 @@ CAPTURE_MAN_FILTER = \
 	    -e '/^\.\\" CAPTURE-MODE-SECTION-START$$/,/^\.\\" CAPTURE-MODE-SECTION-END$$/d'
 endif
 
+# Enable ring-buffer crash logging (tizee fork).
+if ENABLE_CRASH_LOG
+dist_tmux_SOURCES += \
+	crash-log.c \
+	crash-log.h
+endif
+
 # Add bits for fuzzing if enabled.
 if NEED_FUZZING
 check_PROGRAMS = \

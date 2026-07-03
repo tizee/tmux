@@ -20,7 +20,9 @@ builds and behaves exactly like upstream tmux (no capture commands, key
 bindings, or manual sections). This makes it easy to confirm whether a given
 build is the fork with capture mode enabled.
 
-See the Capture Mode section below for details.
+The fork also adds a ring-buffer crash logger, on by default, which writes a
+backtrace plus a tail of recent internal log lines whenever the server crashes.
+See the Capture Mode and Crash Logging sections below for details.
 
 * Capture Mode
 
@@ -145,6 +147,55 @@ Replace the built-ins entirely (only match quoted strings):
 
 	set -g @capture-patterns-override '"[^"]*"'
 
+* Crash Logging
+
+This fork ships a built-in ring-buffer crash logger. Because you are running a
+self-maintained build, it is on by default so that any unexpected server crash
+leaves a locatable trail without you having to reproduce it under a debugger.
+
+When the server dies from a fatal signal (SIGSEGV, SIGBUS, SIGABRT, SIGILL,
+SIGFPE) an async-signal-safe handler writes:
+
+	<socket-dir>/tmux-crash-<pid>.log
+
+containing the signal, the pid, a symbolized backtrace, and the tail of the
+most recent internal log lines. The handler then re-raises the signal, so on
+macOS the usual system crash report (~/Library/Logs/DiagnosticReports) is still
+produced; the two are complementary. The newest crash files are kept and older
+ones pruned automatically.
+
+Find the latest after a crash with:
+
+	$ ls -t "$(dirname "$(tmux display -p '#{socket_path}')")"/tmux-crash-*.log
+
+** Relationship to -v / -vv
+
+tmux's -v flags and this crash log draw from the same internal log stream
+(log_debug), but serve different purposes:
+
+  -v / -vv    Continuous, full verbose logging to tmux-server-<pid>.log and
+              tmux-client-<pid>.log for the whole run. Heavy, opt-in per run,
+              and only captures anything if you remembered to pass -v before
+              the problem happened. Use it when actively debugging a
+              reproducible issue.
+
+  crash log   Always on, near-zero cost. It keeps only the last few hundred
+              log lines in memory and writes them (with a backtrace) only if
+              the process crashes. Nothing is written during normal operation.
+              Use it to diagnose an unexpected crash after the fact, with no
+              prior setup.
+
+In short: -vv is a firehose you turn on before reproducing; the crash log is a
+flight recorder that is always running and dumps only on a crash. They can be
+used together -- with -vv active the full log file and the crash file both
+exist after a crash.
+
+** Disabling
+
+Build with --disable-crash-log to omit the feature entirely (the build then
+behaves like upstream in this respect). On platforms without execinfo.h /
+backtrace, crash logging is skipped automatically.
+
 * Dependencies
 
 tmux depends on libevent 2.x, available from:
@@ -178,7 +229,8 @@ requires autoconf, automake and pkg-config:
 	$ sudo make install
 
 Omit --enable-capture-mode to build a plain upstream-equivalent tmux without
-the capture feature.
+the capture feature. The ring-buffer crash logger is enabled by default in this
+fork; add --disable-crash-log to omit it (see the Crash Logging section).
 
 To get and build the latest upstream tmux from version control:
 

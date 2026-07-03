@@ -25,6 +25,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <libgen.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,7 @@
 #include <unistd.h>
 
 #include "tmux.h"
+#include "crash-log.h"
 
 /*
  * Main server functions.
@@ -200,6 +202,23 @@ server_start(struct tmuxproc *client, uint64_t flags, struct event_base *base,
 
 	proc_set_signals(server_proc, server_signal);
 	sigprocmask(SIG_SETMASK, &oldset, NULL);
+
+#ifdef ENABLE_CRASH_LOG
+	{
+		/*
+		 * Arm the ring-buffer crash handler. Crash files go next to the
+		 * server socket, which already lives in a writable per-user tmp
+		 * directory.
+		 */
+		char	dir[4096];
+
+		if (socket_path != NULL) {
+			strlcpy(dir, socket_path, sizeof dir);
+			crash_log_init(dirname(dir));
+		} else
+			crash_log_init(NULL);
+	}
+#endif
 
 	if (log_get_level() > 1)
 		tty_create_log();

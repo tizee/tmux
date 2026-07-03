@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include "tmux.h"
+#include "crash-log.h"
 
 static FILE	*log_file;
 static int	 log_level;
@@ -103,6 +104,30 @@ log_vwrite(const char *msg, va_list ap, const char *prefix)
 	char		*s, *out;
 	struct timeval	 tv;
 
+#ifdef ENABLE_CRASH_LOG
+	/*
+	 * Record every line into the crash ring, even when file logging is off,
+	 * so a daily build leaves a trail after a crash. Bounded and malloc-free
+	 * so the common (logging-off) path stays cheap.
+	 */
+	{
+		char		rbuf[CRASH_RING_LINE];
+		va_list		ap2;
+		int		pl;
+
+		pl = snprintf(rbuf, sizeof rbuf, "%s", prefix);
+		if (pl < 0)
+			pl = 0;
+		if ((size_t)pl < sizeof rbuf) {
+			va_copy(ap2, ap);
+			(void)vsnprintf(rbuf + pl, sizeof rbuf - (size_t)pl,
+			    msg, ap2);
+			va_end(ap2);
+		}
+		crash_log_record(rbuf);
+	}
+#endif
+
 	if (log_file == NULL)
 		return;
 
@@ -127,8 +152,10 @@ log_debug(const char *msg, ...)
 {
 	va_list	ap;
 
+#ifndef ENABLE_CRASH_LOG
 	if (log_file == NULL)
 		return;
+#endif
 
 	va_start(ap, msg);
 	log_vwrite(msg, ap, "");
