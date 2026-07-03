@@ -51,6 +51,16 @@ cmd_capture_mode_exec(struct cmd *self, struct cmdq_item *item)
 	struct window_pane		*wp = target->wp;
 	struct window_mode_entry	*wme;
 
+	/*
+	 * Capture mode is an interactive overlay: it draws hint labels and posts
+	 * status messages on a client. Without an attached client session there is
+	 * nothing to drive, and the status/overlay paths dereference c->session.
+	 * Bail out as a no-op rather than crash the server (e.g. when invoked as a
+	 * plain command with no attached client).
+	 */
+	if (c == NULL || c->session == NULL)
+		return (CMD_RETURN_NORMAL);
+
 	/* Enter copy mode first if the pane is not already in it. */
 	wme = TAILQ_FIRST(&wp->modes);
 	if (wme == NULL || wme->mode != &window_copy_mode) {

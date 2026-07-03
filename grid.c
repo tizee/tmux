@@ -276,6 +276,15 @@ grid_cells_equal(const struct grid_cell *gc1, const struct grid_cell *gc2)
 void
 grid_set_tab(struct grid_cell *gc, u_int width)
 {
+	/*
+	 * Bound the width to the fixed cell data buffer. A tab never legitimately
+	 * spans more columns than a cell can hold, and only one caller (the HT
+	 * handler in input.c) guards this; clamp here so no caller — including the
+	 * extended-cell read-back path in grid_get_cell — can overflow data.data.
+	 */
+	if (width > sizeof gc->data.data)
+		width = sizeof gc->data.data;
+
 	memset(gc->data.data, 0, sizeof gc->data.data);
 	gc->flags |= GRID_FLAG_TAB;
 	gc->flags &= ~GRID_FLAG_PADDING;
