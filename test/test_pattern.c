@@ -296,6 +296,9 @@ TEST(match_hex_color_boundary)
 		&cp, "color #ff0000ff here", 0, &count);
 	ASSERT_INT_EQ(count, 1, "8-char hex should claim, not 6-char");
 	ASSERT_STR_EQ(matches[0].text, "#ff0000ff", "8-char hex wins");
+	capture_match_free(matches, count);
+	matches = NULL;
+	count = 0;
 
 	/*
 	 * 3-char hex must NOT match when followed by more hex chars
@@ -343,6 +346,9 @@ TEST(match_url_trailing_punct)
 	ASSERT_INT_EQ(count, 1, "should find 1 URL");
 	ASSERT_STR_EQ(matches[0].text, "https://example.com/path",
 		      "trailing . should be stripped");
+	capture_match_free(matches, count);
+	matches = NULL;
+	count = 0;
 
 	matches = capture_pattern_match_line(
 		&cp, "go to https://example.com, please", 0, &count);
@@ -370,6 +376,9 @@ TEST(match_url_balanced_paren)
 	ASSERT_STR_EQ(matches[0].text,
 		      "https://en.wikipedia.org/wiki/Foo_(disambiguation)",
 		      "balanced parens should be kept");
+	capture_match_free(matches, count);
+	matches = NULL;
+	count = 0;
 
 	/* Balanced parens kept, but an extra unbalanced ) is trimmed. */
 	matches = capture_pattern_match_line(

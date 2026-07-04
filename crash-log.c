@@ -79,7 +79,11 @@ crash_utoa(unsigned long v, char *buf, size_t len)
 static void
 crash_puts(int fd, const char *s)
 {
-	(void)write(fd, s, strlen(s));
+	size_t	len = 0;
+
+	while (s[len] != '\0')
+		len++;
+	(void)write(fd, s, len);
 }
 
 /* Async-signal-safe: no strsignal (not signal-safe). */

@@ -514,9 +514,21 @@ AC_ARG_ENABLE(
 if test "x$enable_crash_log" != xno; then
 	AC_CHECK_HEADERS([execinfo.h], [found_execinfo=yes], [found_execinfo=no])
 	if test "x$found_execinfo" = xyes; then
-		AC_CHECK_FUNCS([backtrace backtrace_symbols_fd])
-		AC_DEFINE(ENABLE_CRASH_LOG)
-		enable_crash_log=yes
+		AC_CHECK_FUNCS([backtrace], [found_backtrace=yes], [found_backtrace=no])
+		AC_CHECK_FUNCS([backtrace_symbols_fd],
+		    [found_backtrace_symbols_fd=yes],
+		    [found_backtrace_symbols_fd=no])
+		if test "x$found_backtrace" = xyes &&
+		    test "x$found_backtrace_symbols_fd" = xyes; then
+			AC_DEFINE(ENABLE_CRASH_LOG)
+			enable_crash_log=yes
+		else
+			if test "x$enable_crash_log" = xyes; then
+				AC_MSG_ERROR([crash-log needs backtrace and backtrace_symbols_fd])
+			fi
+			AC_MSG_WARN([backtrace support incomplete; crash logging disabled])
+			enable_crash_log=no
+		fi
 	else
 		if test "x$enable_crash_log" = xyes; then
 			AC_MSG_ERROR([crash-log needs execinfo.h])
