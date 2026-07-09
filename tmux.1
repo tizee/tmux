@@ -4311,6 +4311,49 @@ To match only quoted strings and nothing else:
 set -g @capture-patterns-override '"[^"]*"'
 .Ed
 .\" CAPTURE-MODE-SECTION-END
+.\" CRASH-LOG-SECTION-START
+.Sh CRASH LOGGING
+.Em Crash logging
+is an addition in tizee's
+.Nm
+fork, enabled at build time with the
+.Ic --enable-crash-log
+configure flag.
+It is on by default in this fork; build with
+.Ic --disable-crash-log
+to omit it, and it is skipped automatically on platforms without backtrace
+support.
+.Pp
+Crash logging keeps a bounded ring of the most recent internal log lines in
+memory at near-zero cost during normal operation.
+When the server dies from a fatal signal such as
+.Dv SIGSEGV ,
+.Dv SIGBUS ,
+.Dv SIGABRT ,
+.Dv SIGILL
+or
+.Dv SIGFPE ,
+an async-signal-safe handler writes a crash file and then re-raises the signal,
+so any system crash reporter still runs and the two reports are complementary.
+The crash file is written to
+.Pa <socket-dir>/tmux-crash-<pid>.log
+and contains the signal, the process ID, a symbolized backtrace, and the tail
+of the ring buffer holding the last few thousand internal log lines.
+Older crash files are pruned automatically.
+.Pp
+Find the most recent crash file with:
+.Bd -literal -offset indent
+ls -t "$(dirname "$(tmux display -p '#{socket_path}')")"/tmux-crash-*.log
+.Ed
+.Pp
+The crash log and the
+.Fl v
+flags draw from the same internal log stream but serve different purposes: the
+.Fl v
+flags write the full log continuously and must be enabled before a problem
+occurs, while the crash log is always on and dumps only the recent tail when the
+server crashes.
+.\" CRASH-LOG-SECTION-END
 .Sh KEY BINDINGS
 .Nm
 allows a command to be bound to most keys, with or without a prefix key.

@@ -281,9 +281,10 @@ the crash report in §1.1 symbolized to function names. Preserve that:
   crash report symbolizes with no extra artifact. The `tizee/personal` Homebrew
   formula (this fork's canonical daily-driver install) does this with
   `skip_clean "bin/tmux"`, which stops Homebrew's `Cleaner` from stripping the
-  installed binary. Verify after install:
+  installed binary. Verify after install (on macOS `file` does *not* report
+  "stripped" for Mach-O — check for a static symbol instead):
 
-      file "$(brew --prefix)/bin/tmux"     # expect "not stripped"
+      nm "$(brew --prefix)/bin/tmux" | grep -q crash_handler && echo "symbols kept"
 
 - If you *do* strip when packaging, keep a companion `tmux.dSYM` instead:
 
@@ -507,7 +508,7 @@ Build recipes:
     # Formula: --enable-capture-mode --enable-crash-log,
     # CFLAGS += -fno-omit-frame-pointer -g, skip_clean "bin/tmux".
     brew reinstall tizee/personal/tmux
-    file "$(brew --prefix)/bin/tmux"          # expect "not stripped"
+    nm "$(brew --prefix)/bin/tmux" | grep -q crash_handler && echo "symbols kept"
 
     # Daily driver from source (fast, symbolizable, crash logger on by default)
     ./configure --enable-utf8proc --enable-capture-mode \

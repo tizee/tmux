@@ -181,11 +181,11 @@ tmux's -v flags and this crash log draw from the same internal log stream
               the problem happened. Use it when actively debugging a
               reproducible issue.
 
-  crash log   Always on, near-zero cost. It keeps only the last few hundred
-              log lines in memory and writes them (with a backtrace) only if
-              the process crashes. Nothing is written during normal operation.
-              Use it to diagnose an unexpected crash after the fact, with no
-              prior setup.
+  crash log   Always on, near-zero cost. It keeps only the last few thousand
+              log lines (4096) in memory and writes them (with a backtrace)
+              only if the process crashes. Nothing is written during normal
+              operation. Use it to diagnose an unexpected crash after the
+              fact, with no prior setup.
 
 In short: -vv is a firehose you turn on before reproducing; the crash log is a
 flight recorder that is always running and dumps only on a crash. They can be

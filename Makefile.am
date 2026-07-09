@@ -280,6 +280,12 @@ if ENABLE_CRASH_LOG
 dist_tmux_SOURCES += \
 	crash-log.c \
 	crash-log.h
+# Crash logging docs are kept as-is in the installed manual.
+CRASH_LOG_MAN_FILTER = cat
+else
+# Strip the crash logging section from the installed manual.
+CRASH_LOG_MAN_FILTER = \
+	sed -e '/^\.\\" CRASH-LOG-SECTION-START$$/,/^\.\\" CRASH-LOG-SECTION-END$$/d'
 endif
 
 # Add bits for fuzzing if enabled.
@@ -301,7 +307,8 @@ endif
 
 # Install tmux.1 in the right format.
 install-exec-hook:
-	$(CAPTURE_MAN_FILTER) <$(srcdir)/tmux.1 >$(srcdir)/tmux.1.filtered; \
+	$(CAPTURE_MAN_FILTER) <$(srcdir)/tmux.1 | $(CRASH_LOG_MAN_FILTER) \
+		>$(srcdir)/tmux.1.filtered; \
 	if test x@MANFORMAT@ = xmdoc; then \
 		sed -e "s|@SYSCONFDIR@|$(sysconfdir)|g" $(srcdir)/tmux.1.filtered \
 			>$(srcdir)/tmux.1.mdoc; \
