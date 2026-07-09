@@ -1,5 +1,5 @@
 ---
-updated: 2026-07-04
+updated: 2026-07-09
 source: tizee/tmux fork @ next-3.7 (build-gated by --enable-crash-log, default on)
 ---
 

@@ -277,8 +277,15 @@ both.
 This fork already compiles with `-g3 -ggdb` (see `Makefile.am`), which is why
 the crash report in §1.1 symbolized to function names. Preserve that:
 
-- **Do not `strip` the installed binary.** If you package it, keep a companion
-  `tmux.dSYM`:
+- **Do not `strip` the installed binary.** Keep the symbols *in* the binary so a
+  crash report symbolizes with no extra artifact. The `tizee/personal` Homebrew
+  formula (this fork's canonical daily-driver install) does this with
+  `skip_clean "bin/tmux"`, which stops Homebrew's `Cleaner` from stripping the
+  installed binary. Verify after install:
+
+      file "$(brew --prefix)/bin/tmux"     # expect "not stripped"
+
+- If you *do* strip when packaging, keep a companion `tmux.dSYM` instead:
 
       dsymutil tmux -o tmux.dSYM      # after building
 
@@ -296,12 +303,18 @@ Recommended daily configure (fast, symbolizable, feature-complete):
 `-fno-omit-frame-pointer` keeps backtraces reliable at `-O2`. This build already
 includes the ring-buffer crash logger (§5.2), which is on by default.
 
+The Homebrew formula mirrors this recipe: it passes `--enable-capture-mode
+--enable-crash-log`, appends `-fno-omit-frame-pointer -g` to `CFLAGS`, and keeps
+symbols with `skip_clean` — so a `brew reinstall tizee/personal/tmux` yields a
+build that is both performant and self-diagnosing, no manual `dsymutil` step.
+
 ### 5.2 Built-in ring-buffer crash log (on by default; `--disable-crash-log` to omit)
 
 DiagnosticReports is macOS-only and does not include *what tmux was doing*
 before the crash. This fork ships a small crash handler that, on a fatal signal,
 writes `<socket-dir>/tmux-crash-<pid>.log` containing the backtrace **and the
-last few hundred `log_debug` lines**, then re-raises the signal so the OS crash
+last few thousand `log_debug` lines** (`CRASH_RING_LINES`, currently 4096), then
+re-raises the signal so the OS crash
 reporter still runs. That "ring buffer" — a bounded in-memory tail of internal
 events, flushed only when the process dies — is exactly what tells you which
 pane/mode/command was active right before death.
@@ -327,7 +340,7 @@ stream, but they are opposite tools:
 |--|--------------|-----------|
 | When it writes | continuously, the whole run | only on a fatal signal |
 | Where | `tmux-server-<pid>.log` on disk | `tmux-crash-<pid>.log` (ring dump) |
-| How much | everything | the last few hundred lines |
+| How much | everything | the last few thousand lines (`CRASH_RING_LINES`) |
 | Cost | heavy | near zero |
 | Setup | must pass `-v` *before* the bug | always on, no setup |
 | Use for | actively debugging a reproducible issue | post-mortem of an unexpected crash |
@@ -384,6 +397,87 @@ These turn "silent corruption now, crash later" into "crash at the bad access",
 at a fraction of ASan's setup cost — useful for narrowing before committing to a
 full ASan repro.
 
+### 5.4 Instrumented ASan daily driver: catch corruption that will not reproduce
+
+Some heap-corruption bugs refuse to reproduce under synthetic stress. You get a
+crash report with a **victim** frame (e.g. `grid_free_line` during a copy-mode
+clone; see §1.1), the crash ring names a *subsystem*, but §2's headless ASan
+driving and §4's module fuzzers all stay clean — because the trigger is a rare
+interaction in your **real** multi-day workload (specific pane layout, live TUI
+output, capture/auto-refresh timing), not anything a short script hits. The
+crash ring can still fall short here: a burst of render noise
+(`utf8_to_data`, `tty_draw_line`) can push the corrupting write out of the
+buffer even at `CRASH_RING_LINES` deep.
+
+When that happens, stop trying to guess the write and instead **make your daily
+tmux the ASan build**. The next time the bug fires in normal use, ASan aborts
+*at the corrupting store* with the exact `file:line` and the overflowed
+allocation's origin — turning "recurring mystery" into a one-line fix target.
+
+The tricky part on macOS is that the thing you must instrument is the **server**
+(it owns every grid); the client just attaches. So:
+
+- **ASAN_OPTIONS must be in the environment of the process that _spawns_ the
+  server.** tmux forks+daemonizes the server from the first client that finds no
+  server running; the daemon inherits the env. Attaching to an already-running
+  server does **not** instrument it — you must cycle the server (`kill-server`,
+  then start under the wrapper) for the switch to take effect.
+- **Route reports to files.** The server daemonizes, so its stderr is gone; use
+  `log_path` (reports land at `<dir>/tmux_asan.<pid>`), exactly as in §2.3.
+- **Disable leak detection, or it drowns the real report.** On macOS, LSan
+  fires system-library false positives (`fork`/`_notify_fork_child`/`tzset`) at
+  **every clean server exit**. `detect_leaks=0` is not enough; also set
+  `leak_check_at_exit=0`. With both off, a report file appears *only* on a real
+  violation (buffer overflow, use-after-free, invalid free).
+- **`abort_on_error=1`** so the violation also lands in DiagnosticReports (`.ips`).
+- **`--disable-crash-log`** (as always for ASan builds, §5.2/§6) so the fork's
+  fatal-signal handler does not shadow ASan's.
+- **Keep a stable copy of the binary.** The ASan runtime is referenced by an
+  absolute path (`/opt/homebrew/opt/llvm/.../libclang_rt.asan_osx_dynamic.dylib`),
+  so the binary is relocatable; copy it out of the build tree so a later `make`
+  cannot swap it mid-investigation.
+
+Build the ASan variant with the **same feature flags as your real build** (a
+different `--enable`/`--disable` set is a different binary — see §2.2), then
+install a copy plus a thin launcher that sets the options and a checker:
+
+    # 1. Build ASan variant matching the Homebrew formula's flags, then stash it
+    #    (formula: --enable-sixel --enable-utf8proc --enable-capture-mode)
+    cp ./tmux ~/.local/bin/tmux-asan
+
+    # 2. Launcher: same CLI as tmux; instruments any server it spawns
+    cat > ~/.local/bin/tmux-asan-run <<'SH'
+    #!/bin/sh
+    ASAN_DIR="${TMUX_ASAN_LOG_DIR:-/tmp}"
+    export ASAN_OPTIONS="log_path=${ASAN_DIR}/tmux_asan:detect_leaks=0:leak_check_at_exit=0:abort_on_error=1:handle_abort=1:symbolize=1:print_module_map=1${ASAN_OPTIONS:+:$ASAN_OPTIONS}"
+    exec "$HOME/.local/bin/tmux-asan" "$@"
+    SH
+    chmod +x ~/.local/bin/tmux-asan-run
+
+    # 3. Checker: surface any report that has appeared
+    cat > ~/.local/bin/tmux-asan-check <<'SH'
+    #!/bin/sh
+    d="${TMUX_ASAN_LOG_DIR:-/tmp}"; f=$(ls -t "$d"/tmux_asan.* 2>/dev/null | head -1)
+    [ -z "$f" ] && { echo "No ASan reports in $d (no corruption caught yet)."; exit 0; }
+    ls -lat "$d"/tmux_asan.* | head; echo; echo "=== newest ==="; head -n 60 "$f"
+    SH
+    chmod +x ~/.local/bin/tmux-asan-check
+
+Adopt it when you are ready to cycle the server (detach/save first; a
+resurrect/continuum plugin makes this painless):
+
+    tmux kill-server        # stop the release server
+    tmux-asan-run           # start the instrumented daily server; use tmux as normal
+    # optional: alias tmux=tmux-asan-run   in your shell rc
+
+After the next crash, `tmux-asan-check` (or `ls -t /tmp/tmux_asan.*`) shows the
+report. Unlike the victim-frame `.ips`, this stack is the **culprit**: the write
+that corrupted the heap. From there it is a normal §4 red→green fix — reproduce
+the write in a harness, fix, confirm green.
+
+Cost: ASan is ~2x slower / ~3x memory, acceptable for interactive tmux. Reports
+in `/tmp` are cleared on reboot; set `TMUX_ASAN_LOG_DIR` to persist them.
+
 ---
 
 ## 6. Quick reference
@@ -396,8 +490,9 @@ full ASan repro.
 | Need the exact bad write | ASan build (`--enable-capture-mode`, clean rebuild), `ASAN_OPTIONS=log_path=...` (§2) |
 | Which of my diffs is guilty | fuzz-clear the pure modules, narrow to the glue (§3, §4) |
 | Fixing a memory bug | write a red ASan test on the real function, fix, confirm green (§4) |
-| Make daily builds diagnosable | keep `-g`/dSYM; crash logger is on by default (§5) |
+| Make daily builds diagnosable | Homebrew formula keeps symbols (`skip_clean`) + frame pointers; crash logger on by default (§5) |
 | Rare heap bug, no ASan rebuild | `MallocScribble=1 MallocGuardEdges=1` or `libgmalloc` (§5.3) |
+| Recurring corruption that will not reproduce | run the ASan build as your daily driver (`tmux-asan-run`); next hit aborts at the bad write (§5.4) |
 
 Build recipes:
 
@@ -408,7 +503,22 @@ Build recipes:
       LDFLAGS="-fsanitize=address"
     make clean && make -j8
 
-    # Daily driver (fast, symbolizable, crash logger on by default via §5)
+    # Daily driver via Homebrew (canonical install; keeps symbols, no strip)
+    # Formula: --enable-capture-mode --enable-crash-log,
+    # CFLAGS += -fno-omit-frame-pointer -g, skip_clean "bin/tmux".
+    brew reinstall tizee/personal/tmux
+    file "$(brew --prefix)/bin/tmux"          # expect "not stripped"
+
+    # Daily driver from source (fast, symbolizable, crash logger on by default)
     ./configure --enable-utf8proc --enable-capture-mode \
       CFLAGS="-O2 -g -fno-omit-frame-pointer"
-    make -j8 && dsymutil tmux -o tmux.dSYM
+    make -j8            # binary keeps -g3 symbols; dsymutil only if you strip
+
+    # ASan daily driver for a recurring, hard-to-reproduce corruption (§5.4).
+    # Match your real build's feature flags (here: the Homebrew formula set),
+    # --disable-crash-log so the handler does not shadow ASan, then stash+wrap.
+    ./configure --enable-sixel --enable-utf8proc --enable-capture-mode \
+      --disable-crash-log \
+      CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g -O1" \
+      LDFLAGS="-fsanitize=address"
+    make clean && make -j8 && cp ./tmux ~/.local/bin/tmux-asan

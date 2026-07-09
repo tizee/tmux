@@ -30,7 +30,7 @@
  */
 
 /* Number of recent log lines retained, and the max bytes stored per line. */
-#define CRASH_RING_LINES 512
+#define CRASH_RING_LINES 4096
 #define CRASH_RING_LINE  256
 
 /* Install the fatal-signal handler; crash files are written under dir. */
