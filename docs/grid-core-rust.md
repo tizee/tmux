@@ -26,8 +26,8 @@ against `libgrid_core_ffi.a`. Default remains the C engine; runtime-verified
 | `tmux-rs/grid-core/src/cell.rs` | Value types crossing the API: `GridCell`, `Utf8Data` |
 | `tmux-rs/grid-core/src/codec.rs` | `utf8_char` packing (<=3 bytes inline, longer interned) — pure Rust replica of `utf8_from_data`/`utf8_to_data` |
 | `tmux-rs/grid-core-ffi/src/lib.rs` | The only unsafe layer: 26 `rust_grid_*` C ABI functions |
-| `tmux-rs/grid-core/tests/{behavior,reflow}.rs` | 45 behavior contracts transcribed from grid.c |
-| `tmux-rs/grid-core-ffi/tests/abi.rs` | 8 ABI contracts incl. struct-layout `offset_of` assertions |
+| `tmux-rs/grid-core/tests/{behavior,reflow}.rs` | 46 behavior contracts transcribed from grid.c |
+| `tmux-rs/grid-core-ffi/tests/abi.rs` | 10 ABI contracts incl. struct-layout `offset_of` assertions and C public-field writeback |
 | `tmux-rs/difftest/` | C-vs-Rust differential harness (links the real `grid.o`) |
 
 ## Design Rationale
@@ -58,7 +58,7 @@ Rust engine is the only implementation.
 
 | Check | Scale | Result |
 |-------|-------|--------|
-| Rust unit/behavior suites | 53 tests (30 core + 15 reflow + 8 ABI) | green |
+| Rust unit/behavior suites | 56 tests (31 core + 15 reflow + 10 ABI) | green |
 | Differential vs real `grid.o` | 20 seeds x 20,000 random ops, 11 op kinds, compare every 64 steps | zero divergence |
 | Differential under ASan+UBSan (C side instrumented from source) | 20,000 ops | zero divergence, zero reports |
 | clippy --all-targets / cargo fmt | — | clean |
@@ -85,14 +85,39 @@ built tree for `grid.o`); `cd tmux-rs && cargo test`.
 - **Remaining C-quirk fidelity.** Expand-line chunking (sx/4, sx/2, sx)
   matches; extended-entry reuse and counter arithmetic match bit-for-bit
   (13 seeds x 20,000 ops, zero divergence with only the documented masks).
-- **Mirror header stays fresh.** The `rust_grid` handle's leading fields
-  mirror C `struct grid` (verified by `offset_of` tests) and are re-synced
-  after every mutating call, so C-side `gd->hsize` reads keep working.
+- **Mirror header stays fresh in both directions.** The `rust_grid` handle's
+  leading fields mirror C `struct grid` (verified by `offset_of` tests). Rust
+  mutations re-sync the mirror so C-side reads keep working, and FFI entrypoints
+  that follow tmux's direct public-field writes (`grid_adjust_lines`,
+  `grid_set_hscrolled`) import those C-written geometry fields before touching
+  the owned Rust `Grid`.
 - **Known divergence: reflow.** Content and WRAPPED flags are
   contract-tested; `hscrolled` adjustment and per-line time/metadata
   preservation may differ from C (semantic reimplementation). Reflow is
   excluded from the differential op set; decide align-vs-accept before the
   engine swap.
+
+## Lessons from the 2026-07-10 ABI Crash
+
+- **Memory safety does not imply ABI safety.** Moving line ownership into Rust
+  makes the old C aliasing/double-free class unrepresentable, but the C/Rust
+  boundary can still corrupt the Rust engine's model if it misses a public C
+  contract.
+- **The compatibility target is real tmux behavior, not the clean API we wish
+  existed.** `struct grid` is not opaque in upstream tmux: callers both read and
+  write `gd->hsize`, `gd->sy`, and `gd->hscrolled`. The Rust handle must treat
+  those fields as bidirectional ABI, not a Rust-owned cache.
+- **BDD tests must model callers, not wrappers.** The original ABI suite proved
+  that Rust mutations refreshed C-visible fields, but did not simulate
+  `screen_resize` or `window_copy_clone_screen` writing those fields before the
+  next FFI call. The regression tests now encode those caller-visible scenarios.
+- **Do not patch symptoms at the panic site.** Clamping `clear_history` would
+  have hidden the abort while leaving Rust and C geometry out of sync. The fix
+  belongs at the boundary where C-written geometry enters the Rust-owned grid.
+- **Keep the organ transplant boundary small.** The design goal remains to
+  replace the crash-prone grid storage with Rust, not to refactor tmux around an
+  ideal opaque grid API. Local FFI import keeps the fork rebaseable while still
+  preserving Rust's ownership benefits.
 
 ## Remaining Work: the Engine Swap (audited 2026-07-10)
 
@@ -124,6 +149,7 @@ Plan (Phase 1 + 4 of `.plans/grid-core-rust-poc-260710/`):
 | 4 | C quirk fidelity | extended cell | clear with default bg | flags read back 0 (not CLEARED), matching C |
 | 5 | ABI layout | — | offset_of assertions | `rust_grid_cell` offsets 32/33/34/36/38/40/44/48/52, size 56 |
 | 6 | Reflow contracts | wrapped/wide/styled content | shrink then grow | text, styles, wide-char integrity preserved |
+| 7 | C public-field writeback | tmux C writes `gd->hsize`, `gd->sy`, `gd->hscrolled` during resize/copy-mode setup | next Rust FFI call runs | Rust-owned grid imports the geometry; `history + viewport == storage lines`; clear-history remains safe |
 
 ## Related Documentation
 

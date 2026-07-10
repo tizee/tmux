@@ -121,6 +121,22 @@ impl rust_grid {
         self.scroll_collected = collected;
         self.scroll_generation = generation;
     }
+
+    /// Import public `struct grid` fields that tmux C code wrote directly.
+    fn import_public_geometry(&mut self) {
+        let (sy, hscrolled, hsize, hlimit) = (self.sy, self.hscrolled, self.hsize, self.hlimit);
+        self.inner_mut()
+            .import_public_geometry(sy, hscrolled, hsize, hlimit);
+    }
+
+    /// Apply C `grid_adjust_lines`, deriving the new viewport height from the
+    /// total line count and the C-written history size.
+    fn adjust_lines_from_public_geometry(&mut self, lines: u32) {
+        let (hscrolled, hsize, hlimit) = (self.hscrolled, self.hsize, self.hlimit);
+        self.inner_mut()
+            .adjust_lines_from_public_geometry(lines, hscrolled, hsize, hlimit);
+        self.sync();
+    }
 }
 
 /// # Safety
@@ -435,7 +451,7 @@ pub unsafe extern "C" fn rust_grid_string_free(s: *mut c_char) {
 /// `gd` valid handle.
 #[no_mangle]
 pub unsafe extern "C" fn rust_grid_adjust_lines(gd: *mut rust_grid, lines: u32) {
-    with!(gd, g, g.adjust_lines(lines))
+    (*gd).adjust_lines_from_public_geometry(lines);
 }
 
 /// # Safety
@@ -449,7 +465,10 @@ pub unsafe extern "C" fn rust_grid_empty_line(gd: *mut rust_grid, py: u32, bg: u
 /// `gd` valid handle.
 #[no_mangle]
 pub unsafe extern "C" fn rust_grid_set_hscrolled(gd: *mut rust_grid, hscrolled: u32) {
-    with!(gd, g, g.set_hscrolled(hscrolled))
+    let h = &mut *gd;
+    h.import_public_geometry();
+    h.inner_mut().set_hscrolled(hscrolled);
+    h.sync();
 }
 
 /// # Safety

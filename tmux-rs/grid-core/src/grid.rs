@@ -658,6 +658,30 @@ impl Grid {
         self.lines.resize(lines as usize, Line::default());
     }
 
+    /// Import geometry that tmux C code wrote directly into `struct grid`.
+    pub fn import_public_geometry(&mut self, sy: u32, hscrolled: u32, hsize: u32, hlimit: u32) {
+        self.sy = sy;
+        self.hsize = hsize;
+        self.hlimit = hlimit;
+        self.hscrolled = hscrolled;
+        self.lines.resize(self.rows() as usize, Line::default());
+    }
+
+    /// Apply C `grid_adjust_lines` after tmux has already updated `gd->hsize`.
+    pub fn adjust_lines_from_public_geometry(
+        &mut self,
+        lines: u32,
+        hscrolled: u32,
+        hsize: u32,
+        hlimit: u32,
+    ) {
+        self.hsize = hsize.min(lines);
+        self.sy = lines - self.hsize;
+        self.hlimit = hlimit;
+        self.hscrolled = hscrolled;
+        self.lines.resize(lines as usize, Line::default());
+    }
+
     /// Set the scroll position (C writes `gd->hscrolled` directly).
     pub fn set_hscrolled(&mut self, hscrolled: u32) {
         self.hscrolled = hscrolled;
@@ -674,8 +698,7 @@ impl Grid {
         if collected > 0 {
             dst.lines.drain(0..collected as usize);
         }
-        dst.lines
-            .resize((new_hsize + sy) as usize, Line::default());
+        dst.lines.resize((new_hsize + sy) as usize, Line::default());
         dst.hsize = new_hsize;
         if added > 0 {
             Grid::duplicate_lines(dst, kept, src, kept, added);

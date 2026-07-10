@@ -25,6 +25,21 @@ fn c_cell(ch: &str, width: u8) -> rust_grid_cell {
     }
 }
 
+unsafe fn storage_lines(gd: *const rust_grid) -> u32 {
+    let (mut lines, mut cells, mut extd) = (0, 0, 0);
+    let (mut linebytes, mut cellbytes, mut extdbytes) = (0, 0, 0);
+    rust_grid_storage(
+        gd,
+        &mut lines,
+        &mut cells,
+        &mut extd,
+        &mut linebytes,
+        &mut cellbytes,
+        &mut extdbytes,
+    );
+    lines
+}
+
 #[test]
 fn create_destroy_roundtrip_without_leak_or_crash() {
     for _ in 0..100 {
@@ -153,6 +168,55 @@ fn wrap_position_roundtrip_via_out_params() {
         let mut out = c_cell(" ", 1);
         rust_grid_get_cell(gd, px, py, &mut out);
         assert_eq!(out.data[0], b'h', "position survives reflow via ABI");
+        rust_grid_destroy(gd);
+    }
+}
+
+#[test]
+fn c_resize_geometry_writes_survive_adjust_lines() {
+    // screen_resize writes gd->hsize/gd->hscrolled directly, then calls
+    // grid_adjust_lines(gd, gd->hsize + new_sy). The Rust engine must import
+    // those public C writes before resizing its owned line storage.
+    let gd = rust_grid_create(80, 10, 100);
+    unsafe {
+        (*gd).hsize += 4;
+        (*gd).hscrolled += 4;
+
+        rust_grid_adjust_lines(gd, (*gd).hsize + 6);
+
+        assert_eq!((*gd).hsize, 4, "C-written history size survives");
+        assert_eq!((*gd).hscrolled, 4, "C-written scroll offset survives");
+        assert_eq!((*gd).sy, 6, "viewport height derives from total lines");
+        assert_eq!(storage_lines(gd), 10, "history + viewport line count");
+
+        rust_grid_clear_history(gd);
+        assert_eq!((*gd).hsize, 0);
+        assert_eq!((*gd).sy, 6);
+        assert_eq!(storage_lines(gd), 6);
+        rust_grid_destroy(gd);
+    }
+}
+
+#[test]
+fn c_copy_clone_geometry_writes_survive_set_hscrolled() {
+    // window_copy_clone_screen creates a backing grid, duplicates total rows,
+    // then writes gd->sy/gd->hsize directly before grid_set_hscrolled().
+    let gd = rust_grid_create(80, 12, 100);
+    unsafe {
+        (*gd).sy = 7;
+        (*gd).hsize = 5;
+
+        rust_grid_set_hscrolled(gd, 2);
+
+        assert_eq!((*gd).sy, 7, "C-written viewport height survives");
+        assert_eq!((*gd).hsize, 5, "C-written history size survives");
+        assert_eq!((*gd).hscrolled, 2, "explicit scroll offset is applied");
+        assert_eq!(storage_lines(gd), 12, "history + viewport line count");
+
+        rust_grid_clear_history(gd);
+        assert_eq!((*gd).hsize, 0);
+        assert_eq!((*gd).sy, 7);
+        assert_eq!(storage_lines(gd), 7);
         rust_grid_destroy(gd);
     }
 }
