@@ -726,7 +726,7 @@ session_renumber_windows(struct session *s)
 	TAILQ_FOREACH(wl, &old_lastw, sentry) {
 		wl->flags &= ~WINLINK_VISITED;
 		wl_new = winlink_find_by_window(&s->windows, wl->window);
-		if (wl_new != NULL) {
+		if (wl_new != NULL && (~wl_new->flags & WINLINK_VISITED)) {
 			TAILQ_INSERT_TAIL(&s->lastw, wl_new, sentry);
 			wl_new->flags |= WINLINK_VISITED;
 		}
