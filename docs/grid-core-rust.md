@@ -7,7 +7,7 @@ source: tizee/tmux fork @ next-3.7, tmux-rs/ + grid-rust.c shim (--enable-rust-g
 
 A safe-Rust reimplementation of tmux's `grid.c` — the cell/line/history
 memory management where the recurring double-free / heap-corruption crashes
-live (upstream #4777 / #4888 / #4962 / #5267; this fork's 2026-07-08 and
+live (upstream [#4777], [#4888], [#4962], [#5267]; this fork's 2026-07-08 and
 2026-07-10 crashes are byte-identical stacks). Ownership is `Vec`-based, so
 the entire crash class (line-slot aliasing, double-free, stale extended-data
 offsets) is unrepresentable or handled, by construction.
@@ -19,6 +19,47 @@ functions) linked against `libgrid_core_ffi.a`. Requires cargo; a plain
 `./configure` falls back to the C engine (with a warning) only when cargo is
 absent. Runtime-verified 2026-07-10 (capture, history, reflow-resize,
 copy-mode enter/exit).
+
+## Motivation: the upstream grid-crash lineage
+
+We did not write a Rust grid for novelty. `grid.c`'s manual line-slot memory
+management has an open, multi-year family of "pointer being freed was not
+allocated" heap-corruption crashes that fire when **entering copy mode** on a
+long-running session (macOS Apple Silicon is the loudest reporter because
+libmalloc's guard aborts eagerly there). Each upstream fix has landed
+incompletely and the crash keeps coming back on a slightly different stack —
+`grid_free_line`, then `grid_clear_lines`, then `grid_free_line` again. This
+fork hit byte-identical stacks on 2026-07-08 and 2026-07-10 (see
+[`DEBUGGING.md`](DEBUGGING.md) §1.1 and `.plans/grid-core-rust-poc-260710/`).
+
+The trigger picture — a self-refreshing TUI plus scrolling into copy mode —
+points at the incremental grid-sync path added by the copy-mode auto-refresh
+feature ([#5165], the `r`-key toggle), which does hand-balanced `memmove`/
+`memset` surgery on `linedata` outside `grid.c`; an off-by-one slot leaves a
+live `celldata`/`extddata` alias that is double-freed on the next line clone.
+
+| Issue | Title | Status | Relevance |
+| --- | --- | --- | --- |
+| [#4777] | tmux crashes with memory allocation error entering copy mode (macOS Apple Silicon) | partial fix ([`7582888`]) | Original report; the fix only partially landed on master. |
+| [#4888] | `grid_free_line` crash in copy mode persists after fix in `035a2f35` | open | Same double-free still reproduces after an upstream fix. |
+| [#4962] | Crash in `grid_clear_lines` when entering copy mode (macOS ARM64) | open | Same corruption surfacing at a different free site. |
+| [#5267] | copy-mode SIGABRT in `grid_free_line`: the #4777 fix only partially landed | open | Confirms the fix regressed / never fully reached master. |
+| [#5165] | Automatically refresh copy mode from the pane | closed (feature) | Introduced the incremental grid-sync path implicated in the crash trigger. |
+
+The pattern — a fix, a reopen on a new stack, another partial fix — is exactly
+what makes a memory-safety class of bug expensive to chase in C: libmalloc
+reports the *victim* free, never the earlier out-of-bounds write. Rather than
+keep patching individual free sites and waiting on upstream, we moved the
+ownership into Rust's type system, where line-slot aliasing and double-free are
+unrepresentable by construction, and pinned the two engines together with a
+C-vs-Rust differential test.
+
+[#4777]: https://github.com/tmux/tmux/issues/4777
+[#4888]: https://github.com/tmux/tmux/issues/4888
+[#4962]: https://github.com/tmux/tmux/issues/4962
+[#5165]: https://github.com/tmux/tmux/issues/5165
+[#5267]: https://github.com/tmux/tmux/issues/5267
+[`7582888`]: https://github.com/tmux/tmux/commit/7582888
 
 ## Build and Engine Selection
 

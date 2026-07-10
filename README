@@ -23,8 +23,13 @@ build is the fork with capture mode enabled.
 The fork also adds a ring-buffer crash logger, on by default, which writes a
 backtrace plus a tail of recent internal log lines whenever the server crashes.
 Builds made from a git checkout additionally stamp the source commit into the
-reported version (tmux -V). See the Capture Mode, Crash Logging, and Version
-Stamping sections below for details.
+reported version (tmux -V).
+
+A third fork addition is a safe-Rust grid engine: the core screen grid is
+reimplemented in Rust and, in this fork, built by default (it needs cargo).
+Configure with --disable-rust-grid to fall back to the original C grid. See the
+Capture Mode, Crash Logging, Version Stamping, and Grid Engine sections below
+for details.
 
 * Capture Mode
 
@@ -216,6 +221,25 @@ the hash. This needs no configuration and is not gated behind a build flag. When
 tmux is built outside a git checkout (for example from a release tarball) the
 version falls back to the plain upstream string with no commit suffix.
 
+* Grid Engine
+
+This fork reimplements tmux's core screen grid -- the per-cell storage behind
+every pane, its scrollback, and reflow on resize -- as a safe-Rust library
+(tmux-rs/) fronted by a thin FFI shim. Because you run a self-maintained build,
+the Rust engine is compiled in by default; grid.c is replaced by grid-rust.c
+plus the grid-core-ffi static library.
+
+The engine is selected at configure time, not at runtime. Building it requires
+cargo (the Rust toolchain). A plain ./configure enables it automatically when
+cargo is present and quietly falls back to the C grid (with a warning) when it
+is not, so a checkout without Rust still builds. Pass --disable-rust-grid to
+build the original C engine explicitly, or --enable-rust-grid to make a missing
+cargo a hard error instead of a silent fallback.
+
+Both engines are behaviour-for-behaviour equivalent; a C-vs-Rust differential
+test guards this. When toggling --disable-rust-grid on or off, run "make clean"
+first, as the two variants compile different grid translation units.
+
 * Dependencies
 
 tmux depends on libevent 2.x, available from:
@@ -227,7 +251,10 @@ It also depends on ncurses, available from:
 	https://invisible-mirror.net/archives/ncurses/
 
 To build tmux, a C compiler (for example gcc or clang), make, pkg-config and a
-suitable yacc (yacc or bison) are needed.
+suitable yacc (yacc or bison) are needed. This fork additionally builds the
+Rust grid engine by default, which needs cargo (the Rust toolchain); without
+cargo the build falls back to the C grid, or pass --disable-rust-grid to skip
+Rust explicitly.
 
 * Installation
 
@@ -262,7 +289,9 @@ the `codesign --force --sign -` command on the installed path.
 
 Omit --enable-capture-mode to build a plain upstream-equivalent tmux without
 the capture feature. The ring-buffer crash logger is enabled by default in this
-fork; add --disable-crash-log to omit it (see the Crash Logging section).
+fork; add --disable-crash-log to omit it (see the Crash Logging section). The
+Rust grid engine is also on by default and needs cargo; add --disable-rust-grid
+to build the C grid instead (see the Grid Engine section).
 
 To get and build the latest upstream tmux from version control:
 
