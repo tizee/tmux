@@ -65,14 +65,12 @@ grid_view_set_cells(struct grid *gd, u_int px, u_int py,
 void
 grid_view_clear_history(struct grid *gd, u_int bg)
 {
-	struct grid_line	*gl;
 	u_int			 yy, last;
 
 	/* Find the last used line. */
 	last = 0;
 	for (yy = 0; yy < gd->sy; yy++) {
-		gl = grid_get_line(gd, grid_view_y(gd, yy));
-		if (gl->cellused != 0)
+		if (grid_line_cellused(gd, grid_view_y(gd, yy)) != 0)
 			last = yy + 1;
 	}
 	if (last == 0) {
@@ -87,7 +85,7 @@ grid_view_clear_history(struct grid *gd, u_int bg)
 	}
 	if (last < gd->sy)
 		grid_view_clear(gd, 0, 0, gd->sx, gd->sy - last, bg);
-	gd->hscrolled = 0;
+	grid_set_hscrolled(gd, 0);
 }
 
 /* Clear area. */

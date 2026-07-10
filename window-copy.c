@@ -422,7 +422,6 @@ window_copy_clone_screen(struct screen *src, struct screen *hint, u_int *cx,
     u_int *cy, int trim)
 {
 	struct screen		*dst;
-	const struct grid_line	*gl;
 	u_int			 sy, wx, wy;
 	int			 reflow;
 
@@ -431,8 +430,7 @@ window_copy_clone_screen(struct screen *src, struct screen *hint, u_int *cx,
 	sy = screen_hsize(src) + screen_size_y(src);
 	if (trim) {
 		while (sy > screen_hsize(src)) {
-			gl = grid_peek_line(src->grid, sy - 1);
-			if (gl == NULL || gl->cellused != 0)
+			if (grid_line_cellused(src->grid, sy - 1) != 0)
 				break;
 			sy--;
 		}
@@ -451,7 +449,7 @@ window_copy_clone_screen(struct screen *src, struct screen *hint, u_int *cx,
 
 	dst->grid->sy = sy - screen_hsize(src);
 	dst->grid->hsize = screen_hsize(src);
-	dst->grid->hscrolled = src->grid->hscrolled;
+	grid_set_hscrolled(dst->grid, src->grid->hscrolled);
 	if (src->cy > dst->grid->sy - 1) {
 		dst->cx = 0;
 		dst->cy = dst->grid->sy - 1;
@@ -510,7 +508,7 @@ window_copy_sync_backing(struct window_mode_entry *wme)
 	u_int				 sy = sg->sy;
 	u_int				 old_hsize = dg->hsize;
 	u_int				 new_hsize = sg->hsize;
-	u_int				 added, collected, kept;
+	u_int				 added, collected;
 
 	/*
 	 * Only a pane's own live grid is tracked incrementally. A different
@@ -538,42 +536,13 @@ window_copy_sync_backing(struct window_mode_entry *wme)
 	    old_hsize + added - collected != new_hsize)
 		return (0);
 
-	kept = old_hsize - collected;
-
 	if (added == 0 && collected == 0) {
 		/* History is unchanged; only the viewport can have mutated. */
 		grid_duplicate_lines(dg, dg->hsize, sg, sg->hsize, sy);
-	} else {
-		/* Drop the oldest lines and shift the rest down. */
-		if (collected > 0) {
-			grid_free_lines(dg, 0, collected);
-			memmove(&dg->linedata[0], &dg->linedata[collected],
-			    (old_hsize + sy - collected) * sizeof *dg->linedata);
-			memset(&dg->linedata[old_hsize + sy - collected], 0,
-			    collected * sizeof *dg->linedata);
-		}
+	} else
+		grid_sync_history(dg, sg, added, collected);
 
-		/* Resize linedata to the new history plus viewport. */
-		if (new_hsize + sy != old_hsize + sy - collected) {
-			dg->linedata = xreallocarray(dg->linedata,
-			    new_hsize + sy, sizeof *dg->linedata);
-			memset(&dg->linedata[old_hsize + sy - collected], 0,
-			    (new_hsize - kept) * sizeof *dg->linedata);
-		}
-
-		/*
-		 * Set hsize before copying so grid_duplicate_lines does not
-		 * clamp the count to the old, smaller grid size.
-		 */
-		dg->hsize = new_hsize;
-
-		/* Copy the newly scrolled history, then refresh the viewport. */
-		if (added > 0)
-			grid_duplicate_lines(dg, kept, sg, kept, added);
-		grid_duplicate_lines(dg, new_hsize, sg, new_hsize, sy);
-	}
-
-	dg->hscrolled = sg->hscrolled;
+	grid_set_hscrolled(dg, sg->hscrolled);
 
 	/* Match clone_screen's backing cursor placement. */
 	if (src->cy > dg->sy - 1) {
@@ -1141,10 +1110,9 @@ window_copy_formats(struct window_mode_entry *wme, struct format_tree *ft)
 	struct window_copy_mode_data	*data = wme->data;
 	u_int				 hsize = screen_hsize(data->backing);
 	u_int				 position, limit;
-	struct grid_line		*gl;
 
-	gl = grid_get_line(data->backing->grid, hsize - data->oy);
-	format_add(ft, "top_line_time", "%llu", (unsigned long long)gl->time);
+	format_add(ft, "top_line_time", "%llu", (unsigned long long)
+	    grid_line_time(data->backing->grid, hsize - data->oy));
 
 	format_add(ft, "scroll_position", "%d", data->oy);
 	if (window_copy_line_number_is_absolute(wme)) {
@@ -2047,7 +2015,6 @@ window_copy_cmd_next_matching_bracket(struct window_copy_cmd_state *cs)
 	u_int				 px, py, xx, yy, sx, sy, n;
 	struct grid_cell		 gc;
 	int				 failed;
-	struct grid_line		*gl;
 
 	for (; np != 0; np--) {
 		/* Get cursor position and line length. */
@@ -2109,10 +2076,11 @@ window_copy_cmd_next_matching_bracket(struct window_copy_cmd_state *cs)
 			if (px > xx) {
 				if (py == yy)
 					continue;
-				gl = grid_get_line(s->grid, py);
-				if (~gl->flags & GRID_LINE_WRAPPED)
+				if (~grid_line_flags(s->grid, py) &
+				    GRID_LINE_WRAPPED)
 					continue;
-				if (gl->cellsize > s->grid->sx)
+				if (grid_line_cellsize(s->grid, py) >
+				    s->grid->sx)
 					continue;
 				px = 0;
 				py++;
@@ -2515,7 +2483,7 @@ window_copy_cmd_select_word(struct window_copy_cmd_state *cs)
 	/* Handle single character words. */
 	nextx = px + 1;
 	nexty = py;
-	if (grid_get_line(data->backing->grid, nexty)->flags &
+	if (grid_line_flags(data->backing->grid, nexty) &
 	    GRID_LINE_WRAPPED && nextx > screen_size_x(data->backing) - 1) {
 		nextx = 0;
 		nexty++;
@@ -3933,7 +3901,6 @@ window_copy_search_lr(struct grid *gd, struct grid *sgd, u_int *ppx, u_int py,
 {
 	u_int			 ax, bx, px, pywrap, endline, padding;
 	int			 matched;
-	struct grid_line	*gl;
 	struct grid_cell	 gc;
 
 	endline = gd->hsize + gd->sy - 1;
@@ -3944,8 +3911,8 @@ window_copy_search_lr(struct grid *gd, struct grid *sgd, u_int *ppx, u_int py,
 			pywrap = py;
 			/* Wrap line. */
 			while (px >= gd->sx && pywrap < endline) {
-				gl = grid_get_line(gd, pywrap);
-				if (~gl->flags & GRID_LINE_WRAPPED)
+				if (~grid_line_flags(gd, pywrap) &
+				    GRID_LINE_WRAPPED)
 					break;
 				px -= gd->sx;
 				pywrap++;
@@ -3977,7 +3944,6 @@ window_copy_search_rl(struct grid *gd,
 {
 	u_int			 ax, bx, px, pywrap, endline, padding;
 	int			 matched;
-	struct grid_line	*gl;
 	struct grid_cell	 gc;
 
 	endline = gd->hsize + gd->sy - 1;
@@ -3988,8 +3954,8 @@ window_copy_search_rl(struct grid *gd,
 			pywrap = py;
 			/* Wrap line. */
 			while (px >= gd->sx && pywrap < endline) {
-				gl = grid_get_line(gd, pywrap);
-				if (~gl->flags & GRID_LINE_WRAPPED)
+				if (~grid_line_flags(gd, pywrap) &
+				    GRID_LINE_WRAPPED)
 					break;
 				px -= gd->sx;
 				pywrap++;
@@ -4023,7 +3989,6 @@ window_copy_search_lr_regex(struct grid *gd, u_int *ppx, u_int *psx, u_int py,
 	u_int			endline, foundx, foundy, len, pywrap, size = 1;
 	char		       *buf;
 	regmatch_t		regmatch;
-	struct grid_line       *gl;
 
 	/*
 	 * This can happen during search if the last match was the last
@@ -4046,8 +4011,7 @@ window_copy_search_lr_regex(struct grid *gd, u_int *ppx, u_int *psx, u_int py,
 	while (buf != NULL &&
 	    pywrap <= endline &&
 	    len < WINDOW_COPY_SEARCH_MAX_LINE) {
-		gl = grid_get_line(gd, pywrap);
-		if (~gl->flags & GRID_LINE_WRAPPED)
+		if (~grid_line_flags(gd, pywrap) & GRID_LINE_WRAPPED)
 			break;
 		pywrap++;
 		buf = window_copy_stringify(gd, pywrap, 0, gd->sx, buf, &size);
@@ -4089,7 +4053,6 @@ window_copy_search_rl_regex(struct grid *gd, u_int *ppx, u_int *psx, u_int py,
 	int			eflags = 0;
 	u_int			endline, len, pywrap, size = 1;
 	char		       *buf;
-	struct grid_line       *gl;
 
 	/* Set flags for regex search. */
 	if (first != 0)
@@ -4105,8 +4068,7 @@ window_copy_search_rl_regex(struct grid *gd, u_int *ppx, u_int *psx, u_int py,
 	while (buf != NULL &&
 	    pywrap <= endline &&
 	    len < WINDOW_COPY_SEARCH_MAX_LINE) {
-		gl = grid_get_line(gd, pywrap);
-		if (~gl->flags & GRID_LINE_WRAPPED)
+		if (~grid_line_flags(gd, pywrap) & GRID_LINE_WRAPPED)
 			break;
 		pywrap++;
 		buf = window_copy_stringify(gd, pywrap, 0, gd->sx, buf, &size);
@@ -4127,47 +4089,44 @@ window_copy_search_rl_regex(struct grid *gd, u_int *ppx, u_int *psx, u_int py,
 }
 
 static const char *
-window_copy_cellstring(const struct grid_line *gl, u_int px, size_t *size,
+window_copy_cellstring(struct grid *gd, u_int py, u_int px, size_t *size,
     int *allocated)
 {
-	static struct utf8_data	 ud;
-	struct grid_cell_entry	*gce;
+	static struct grid_cell	 gc;
 	char			*copy;
 
-	if (px >= gl->cellsize) {
+	if (px >= grid_line_cellsize(gd, py)) {
 		*size = 1;
 		*allocated = 0;
 		return (" ");
 	}
 
-	gce = &gl->celldata[px];
-	if (gce->flags & GRID_FLAG_PADDING) {
+	grid_get_cell(gd, px, py, &gc);
+	if (gc.flags & GRID_FLAG_PADDING) {
 		*size = 0;
 		*allocated = 0;
 		return (NULL);
 	}
-	if (~gce->flags & GRID_FLAG_EXTENDED) {
-		*size = 1;
-		*allocated = 0;
-		return (&gce->data.data);
-	}
-	if (gce->flags & GRID_FLAG_TAB) {
+	if (gc.flags & GRID_FLAG_TAB) {
 		*size = 1;
 		*allocated = 0;
 		return ("\t");
 	}
-
-	utf8_to_data(gl->extddata[gce->offset].data, &ud);
-	if (ud.size == 0) {
+	if (gc.data.size == 0) {
 		*size = 0;
 		*allocated = 0;
 		return (NULL);
 	}
-	*size = ud.size;
+	if (gc.data.size == 1) {
+		*size = 1;
+		*allocated = 0;
+		return ((const char *)gc.data.data);
+	}
+	*size = gc.data.size;
 	*allocated = 1;
 
-	copy = xmalloc(ud.size);
-	memcpy(copy, ud.data, ud.size);
+	copy = xmalloc(gc.data.size);
+	memcpy(copy, gc.data.data, gc.data.size);
 	return (copy);
 }
 
@@ -4228,7 +4187,6 @@ window_copy_stringify(struct grid *gd, u_int py, u_int first, u_int last,
     char *buf, u_int *size)
 {
 	u_int			 ax, bx, newsize = *size;
-	const struct grid_line	*gl;
 	const char		*d;
 	size_t			 bufsize = 1024, dlen;
 	int			 allocated;
@@ -4237,14 +4195,13 @@ window_copy_stringify(struct grid *gd, u_int py, u_int first, u_int last,
 		bufsize *= 2;
 	buf = xrealloc(buf, bufsize);
 
-	gl = grid_peek_line(gd, py);
-	if (gl == NULL) {
+	if (py >= gd->hsize + gd->sy) {
 		buf[*size - 1] = '\0';
 		return (buf);
 	}
 	bx = *size - 1;
 	for (ax = first; ax < last; ax++) {
-		d = window_copy_cellstring(gl, ax, &dlen, &allocated);
+		d = window_copy_cellstring(gd, py, ax, &dlen, &allocated);
 		newsize += dlen;
 		while (bufsize < newsize) {
 			bufsize *= 2;
@@ -4272,7 +4229,6 @@ window_copy_cstrtocellpos(struct grid *gd, u_int ncells, u_int *ppx, u_int *ppy,
 {
 	u_int			 cell, ccell, px, pywrap, pos, len;
 	int			 match;
-	const struct grid_line	*gl;
 	const char		*d;
 	size_t			 dlen;
 	struct {
@@ -4286,21 +4242,19 @@ window_copy_cstrtocellpos(struct grid *gd, u_int ncells, u_int *ppx, u_int *ppy,
 	cell = 0;
 	px = *ppx;
 	pywrap = *ppy;
-	gl = grid_peek_line(gd, pywrap);
-	if (gl == NULL) {
+	if (pywrap >= gd->hsize + gd->sy) {
 		free(cells);
 		return;
 	}
 	while (cell < ncells) {
-		cells[cell].d = window_copy_cellstring(gl, px,
+		cells[cell].d = window_copy_cellstring(gd, pywrap, px,
 		    &cells[cell].dlen, &cells[cell].allocated);
 		cell++;
 		px++;
 		if (px == gd->sx) {
 			px = 0;
 			pywrap++;
-			gl = grid_peek_line(gd, pywrap);
-			if (gl == NULL)
+			if (pywrap >= gd->hsize + gd->sy)
 				break;
 		}
 	}
@@ -4427,7 +4381,7 @@ window_copy_search_back_overlap(struct grid *gd, regex_t *preg, u_int *ppx,
 	px = *ppx;
 	py = *ppy;
 	while (found && px == 0 && py - 1 > endline &&
-	       grid_get_line(gd, py - 2)->flags & GRID_LINE_WRAPPED &&
+	       grid_line_flags(gd, py - 2) & GRID_LINE_WRAPPED &&
 	       endx == oldendx && endy == oldendy) {
 		py--;
 		found = window_copy_search_rl_regex(gd, &px, &sx, py - 1, 0,
@@ -4699,11 +4653,9 @@ window_copy_visible_lines(struct window_copy_mode_data *data, u_int *start,
     u_int *end)
 {
 	struct grid		*gd = data->backing->grid;
-	const struct grid_line	*gl;
 
 	for (*start = gd->hsize - data->oy; *start > 0; (*start)--) {
-		gl = grid_peek_line(gd, (*start) - 1);
-		if (gl == NULL || ~gl->flags & GRID_LINE_WRAPPED)
+		if (~grid_line_flags(gd, (*start) - 1) & GRID_LINE_WRAPPED)
 			break;
 	}
 	*end = gd->hsize - data->oy + gd->sy;
@@ -5810,7 +5762,7 @@ window_copy_get_selection(struct window_mode_entry *wme, size_t *len)
 	}
 	 /* Remove final \n (unless at end in vi mode). */
 	if (keys == MODEKEY_EMACS || lastex <= ey_last) {
-		if (~grid_get_line(data->backing->grid, ey)->flags &
+		if (~grid_line_flags(data->backing->grid, ey) &
 		    GRID_LINE_WRAPPED || lastex != ey_last)
 			off -= 1;
 	}
@@ -6433,7 +6385,6 @@ window_copy_copy_line(struct window_mode_entry *wme, char **buf, size_t *off,
 	struct window_copy_mode_data	*data = wme->data;
 	struct grid			*gd = data->backing->grid;
 	struct grid_cell		 gc;
-	struct grid_line		*gl;
 	struct utf8_data		 ud;
 	u_int				 i, xx, wrapped = 0;
 	const char			*s;
@@ -6445,13 +6396,13 @@ window_copy_copy_line(struct window_mode_entry *wme, char **buf, size_t *off,
 	 * Work out if the line was wrapped at the screen edge and all of it is
 	 * on screen.
 	 */
-	gl = grid_get_line(gd, sy);
-	if (gl->flags & GRID_LINE_WRAPPED && gl->cellsize <= gd->sx)
+	if (grid_line_flags(gd, sy) & GRID_LINE_WRAPPED &&
+	    grid_line_cellsize(gd, sy) <= gd->sx)
 		wrapped = 1;
 
 	/* If the line was wrapped, don't strip spaces (use the full length). */
 	if (wrapped)
-		xx = gl->cellsize;
+		xx = grid_line_cellsize(gd, sy);
 	else
 		xx = window_copy_find_length(wme, sy);
 	if (ex > xx)
@@ -7105,7 +7056,7 @@ window_copy_cursor_prompt(struct window_mode_entry *wme, int direction,
 			return;
 		line += add;
 
-		if (grid_get_line(gd, line)->flags & line_flag)
+		if (grid_line_flags(gd, line) & line_flag)
 			break;
 	}
 

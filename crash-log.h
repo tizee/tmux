@@ -37,6 +37,8 @@
 void	crash_log_init(const char *dir);
 
 /* Record one already-formatted log line into the ring (cheap, no malloc). */
-void	crash_log_record(const char *line);
+void		crash_log_record(const char *line);
+unsigned	crash_log_ring_head(void);
+const char	*crash_log_ring_line(unsigned idx);
 
 #endif /* CRASH_LOG_H */

@@ -539,6 +539,22 @@ if test "x$enable_crash_log" != xno; then
 fi
 AM_CONDITIONAL(ENABLE_CRASH_LOG, [test "x$enable_crash_log" = xyes])
 
+# Enable the safe-Rust grid engine (tizee fork; see docs/grid-core-rust.md).
+# Default OFF; requires cargo. grid.c is replaced by grid-rust.c + the
+# grid-core-ffi static library.
+AC_ARG_ENABLE(
+	rust-grid,
+	AS_HELP_STRING(--enable-rust-grid, use the Rust grid engine (tizee fork; needs cargo))
+)
+if test "x$enable_rust_grid" = xyes; then
+	AC_CHECK_PROG(found_cargo, cargo, yes, no)
+	if test "x$found_cargo" != xyes; then
+		AC_MSG_ERROR([--enable-rust-grid needs cargo])
+	fi
+	AC_DEFINE(ENABLE_RUST_GRID)
+fi
+AM_CONDITIONAL(ENABLE_RUST_GRID, [test "x$enable_rust_grid" = xyes])
+
 # Check for b64_ntop. If we have b64_ntop, we assume b64_pton as well.
 AC_MSG_CHECKING(for b64_ntop)
 AC_LINK_IFELSE([AC_LANG_PROGRAM(

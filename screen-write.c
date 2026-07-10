@@ -627,7 +627,6 @@ screen_write_fast_copy(struct screen_write_ctx *ctx, struct screen *src,
 	struct window_pane	*wp = ctx->wp;
 	struct tty_ctx		 ttyctx;
 	struct grid		*gd = src->grid;
-	struct grid_line	*gl, *sgl;
 	struct grid_cell	 gc;
 	u_int			 xx, yy, cx = s->cx, cy = s->cy;
 	int			 xoff = 0, yoff = 0;
@@ -648,9 +647,8 @@ screen_write_fast_copy(struct screen_write_ctx *ctx, struct screen *src,
 		r = window_visible_ranges(wp, xoff + s->cx, s->cy + yoff, nx,
 		    NULL);
 		for (xx = px; xx < px + nx; xx++) {
-			gl = grid_get_line(gd, yy);
-			sgl = grid_get_line(s->grid, s->cy);
-			if (xx >= gl->cellsize && s->cx >= sgl->cellsize)
+			if (xx >= grid_line_cellsize(gd, yy) &&
+			    s->cx >= grid_line_cellsize(s->grid, s->cy))
 				break;
 
 			grid_get_cell(gd, xx, yy, &gc);
@@ -1115,14 +1113,13 @@ void
 screen_write_backspace(struct screen_write_ctx *ctx)
 {
 	struct screen		*s = ctx->s;
-	struct grid_line	*gl;
 	u_int			 cx = s->cx, cy = s->cy;
 
 	if (cx == 0) {
 		if (cy == 0)
 			return;
-		gl = grid_get_line(s->grid, s->grid->hsize + cy - 1);
-		if (gl->flags & GRID_LINE_WRAPPED) {
+		if (grid_line_flags(s->grid, s->grid->hsize + cy - 1) &
+		    GRID_LINE_WRAPPED) {
 			cy--;
 			cx = screen_size_x(s) - 1;
 		}
@@ -1521,12 +1518,11 @@ void
 screen_write_clearline(struct screen_write_ctx *ctx, u_int bg)
 {
 	struct screen			*s = ctx->s;
-	struct grid_line		*gl;
 	u_int				 sx = screen_size_x(s);
 	struct screen_write_citem	*ci = ctx->item;
 
-	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
-	if (gl->cellsize == 0 && COLOUR_DEFAULT(bg))
+	if (grid_line_cellsize(s->grid, s->grid->hsize + s->cy) == 0 &&
+	    COLOUR_DEFAULT(bg))
 		return;
 
 #ifdef ENABLE_SIXEL
@@ -1550,7 +1546,6 @@ void
 screen_write_clearendofline(struct screen_write_ctx *ctx, u_int bg)
 {
 	struct screen			*s = ctx->s;
-	struct grid_line		*gl;
 	u_int				 sx = screen_size_x(s);
 	struct screen_write_citem	*ci = ctx->item;
 
@@ -1559,8 +1554,9 @@ screen_write_clearendofline(struct screen_write_ctx *ctx, u_int bg)
 		return;
 	}
 
-	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
-	if (s->cx > sx - 1 || (s->cx >= gl->cellsize && COLOUR_DEFAULT(bg)))
+	if (s->cx > sx - 1 ||
+	    (s->cx >= grid_line_cellsize(s->grid, s->grid->hsize + s->cy) &&
+	    COLOUR_DEFAULT(bg)))
 		return;
 
 #ifdef ENABLE_SIXEL
@@ -1690,15 +1686,13 @@ screen_write_linefeed(struct screen_write_ctx *ctx, int wrapped, u_int bg)
 {
 	struct screen		*s = ctx->s;
 	struct grid		*gd = s->grid;
-	struct grid_line	*gl;
 #ifdef ENABLE_SIXEL
 	int			 redraw = 0;
 #endif
 	u_int			 rupper = s->rupper, rlower = s->rlower;
 
-	gl = grid_get_line(gd, gd->hsize + s->cy);
 	if (wrapped)
-		gl->flags |= GRID_LINE_WRAPPED;
+		grid_line_set_flag(gd, gd->hsize + s->cy, GRID_LINE_WRAPPED, 1);
 
 	log_debug("%s: at %u,%u (region %u-%u)", __func__, s->cx, s->cy,
 	    rupper, rlower);
@@ -2508,8 +2502,6 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 	struct window_pane	*wp = ctx->wp;
 	struct grid		*gd = s->grid;
 	const struct utf8_data	*ud = &gc->data;
-	struct grid_line	*gl;
-	struct grid_cell_entry	*gce;
 	struct grid_cell	 tmp_gc, now_gc;
 	struct tty_ctx		 ttyctx;
 	u_int			 sx = screen_size_x(s), sy = screen_size_y(s);
@@ -2556,8 +2548,8 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 	screen_write_initctx(ctx, &ttyctx, 0, 0);
 
 	/* Handle overwriting of UTF-8 characters. */
-	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
-	if (gl->flags & GRID_LINE_EXTENDED) {
+	if (grid_line_flags(s->grid, s->grid->hsize + s->cy) &
+	    GRID_LINE_EXTENDED) {
 		grid_view_get_cell(gd, s->cx, s->cy, &now_gc);
 		if (screen_write_overwrite(ctx, &now_gc, width)) {
 			redraw = 1;
@@ -2577,26 +2569,17 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 
 	/* If no change, do not draw. */
 	if (skip) {
-		if (s->cx >= gl->cellsize)
+		if (s->cx >= grid_line_cellsize(s->grid,
+		    s->grid->hsize + s->cy))
 			skip = grid_cells_equal(gc, &grid_default_cell);
 		else {
-			gce = &gl->celldata[s->cx];
-			if (gce->flags & GRID_FLAG_EXTENDED)
-				skip = 0;
-			else if (gc->flags != gce->flags)
-				skip = 0;
-			else if (gc->attr != gce->data.attr)
-				skip = 0;
-			else if (gc->fg != gce->data.fg)
-				skip = 0;
-			else if (gc->bg != gce->data.bg)
-				skip = 0;
-			else if (gc->data.width != 1)
-				skip = 0;
-			else if (gc->data.size != 1)
-				skip = 0;
-			else if (gce->data.data != gc->data.data[0])
-				skip = 0;
+			/*
+			 * Compare by value rather than poking the stored
+			 * entry: engine-agnostic (see docs/grid-core-rust.md)
+			 * and also skips equal extended cells.
+			 */
+			grid_view_get_cell(gd, s->cx, s->cy, &now_gc);
+			skip = grid_cells_equal(gc, &now_gc);
 		}
 	}
 

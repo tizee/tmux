@@ -42,18 +42,71 @@
  */
 static char			crash_ring[CRASH_RING_LINES][CRASH_RING_LINE];
 static volatile unsigned	crash_ring_head;
+static volatile unsigned	crash_ring_dropped;
 
 static char			crash_path[CRASH_PATH_MAX];  /* built at init */
 static char			crash_altstack[CRASH_ALT_STACK];
 static volatile sig_atomic_t	crash_in_handler;
 
-void
-crash_log_record(const char *line)
+/*
+ * Per-glyph render lines fire five-plus times per drawn character; a busy TUI
+ * pane floods the ring with them and evicts the command-level events that
+ * actually explain a crash. Drop them at the ring (they are victim residue,
+ * not leads — see docs/DEBUGGING.md §1.1) and fold each run into a single
+ * summary line so the timeline still shows a render burst happened.
+ */
+static const char *crash_noise[] = {
+	"utf8_to_data:",
+	"utf8_from_data:",
+	"UTF-8 ",
+	"utf8proc_wcwidth(",
+	"input_top_bit_set",
+	"screen_write_combine:",
+};
+
+static void
+crash_ring_put(const char *line)
 {
 	unsigned	slot = crash_ring_head % CRASH_RING_LINES;
 
 	strlcpy(crash_ring[slot], line, CRASH_RING_LINE);
 	crash_ring_head++;
+}
+
+void
+crash_log_record(const char *line)
+{
+	unsigned	i;
+	char		summary[64];
+
+	for (i = 0; i < nitems(crash_noise); i++) {
+		if (strncmp(line, crash_noise[i],
+		    strlen(crash_noise[i])) == 0) {
+			crash_ring_dropped++;
+			return;
+		}
+	}
+	if (crash_ring_dropped > 0) {
+		(void)snprintf(summary, sizeof summary,
+		    "(ring: dropped %u render-noise lines)",
+		    (unsigned)crash_ring_dropped);
+		crash_ring_dropped = 0;
+		crash_ring_put(summary);
+	}
+	crash_ring_put(line);
+}
+
+/* Read-only ring accessors, for tests and future introspection. */
+unsigned
+crash_log_ring_head(void)
+{
+	return (crash_ring_head);
+}
+
+const char *
+crash_log_ring_line(unsigned idx)
+{
+	return (crash_ring[idx % CRASH_RING_LINES]);
 }
 
 /* Async-signal-safe unsigned -> decimal. Returns the written length. */
@@ -144,6 +197,16 @@ crash_handler(int sig)
 				crash_puts(fd, l);
 				(void)write(fd, "\n", 1);
 			}
+		}
+		if (crash_ring_dropped > 0) {
+			/* Noise dropped after the last kept line: flush the
+			 * pending count signal-safely so the trail's end is
+			 * not silently missing a render burst. */
+			crash_puts(fd, "(ring: dropped ");
+			crash_utoa((unsigned long)crash_ring_dropped, num,
+			    sizeof num);
+			crash_puts(fd, num);
+			crash_puts(fd, " render-noise lines)\n");
 		}
 		crash_puts(fd, "=== end ===\n");
 		(void)close(fd);

@@ -9,6 +9,7 @@ fork's additions and how to debug the fork itself.
 | Doc | What it covers |
 |-----|----------------|
 | [`DEBUGGING.md`](DEBUGGING.md) | Field manual: reading crash reports (`.ips`), AddressSanitizer, layered elimination, writing fuzz harnesses, and daily builds that record their own crashes |
+| [`grid-core-rust.md`](grid-core-rust.md) | Safe-Rust grid engine PoC (`tmux-rs/`): design, validation evidence, engine-swap roadmap |
 | [`capture-mode.md`](capture-mode.md) | Design of capture mode — the hint-based copy-mode text picker (`--enable-capture-mode`) |
 | [`crash-log.md`](crash-log.md) | Design of the ring-buffer crash logger (`--enable-crash-log`, on by default) |
 

@@ -3341,6 +3341,14 @@ void	 grid_set_padding(struct grid *, u_int, u_int);
 void	 grid_set_cells(struct grid *, u_int, u_int, const struct grid_cell *,
 	     const char *, size_t);
 struct grid_line *grid_get_line(struct grid *, u_int);
+int		 grid_line_flags(struct grid *, u_int);
+void		 grid_line_set_flag(struct grid *, u_int, int, int);
+u_int		 grid_line_cellsize(struct grid *, u_int);
+u_int		 grid_line_cellused(struct grid *, u_int);
+time_t		 grid_line_time(struct grid *, u_int);
+void		 grid_set_hscrolled(struct grid *, u_int);
+void		 grid_storage(struct grid *, u_int *, u_int *, u_int *,
+		     size_t *, size_t *, size_t *);
 void	 grid_adjust_lines(struct grid *, u_int);
 void	 grid_clear(struct grid *, u_int, u_int, u_int, u_int, u_int);
 void	 grid_clear_lines(struct grid *, u_int, u_int, u_int);
@@ -3350,6 +3358,7 @@ char	*grid_string_cells(struct grid *, u_int, u_int, u_int,
 	     struct grid_cell **, int, struct screen *);
 void	 grid_duplicate_lines(struct grid *, u_int, struct grid *, u_int,
 	     u_int);
+void	 grid_sync_history(struct grid *, struct grid *, u_int, u_int);
 void	 grid_reflow(struct grid *, u_int);
 void	 grid_wrap_position(struct grid *, u_int, u_int, u_int *, u_int *);
 void	 grid_unwrap_position(struct grid *, u_int *, u_int *, u_int, u_int);

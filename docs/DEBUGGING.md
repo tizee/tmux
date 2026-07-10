@@ -360,6 +360,17 @@ Implementation lives in **`crash-log.c`** / **`crash-log.h`**, hooked from
   daily build with no logging flags still captures the trail. Cost is one small
   `vsnprintf` per `log_debug` — acceptable for a personal driver, and gated off
   by default.
+- **Per-glyph render noise is filtered out of the ring.** High-frequency
+  render lines (`utf8_to_data`, `screen_write_combine`, `utf8proc_wcwidth`,
+  etc. — see `crash_noise[]` in `crash-log.c`) fire five-plus times per drawn
+  character; a busy TUI pane floods the ring with them and evicts the
+  command-level events that actually explain a crash (this is the §5.4 failure
+  mode). `crash_log_record` drops them by prefix match and folds each run into
+  a single `(ring: dropped N render-noise lines)` summary line, so the
+  timeline still shows a render burst happened while the effective history
+  depth grows several-fold. A count still pending at crash time is flushed
+  signal-safely at the end of the dump. Full render detail remains available
+  via `-vv` when actively debugging.
 - **The handler is async-signal-safe.** No `malloc`, no `printf`: only
   `open`/`write`/`backtrace_symbols_fd` and hand-rolled integer formatting; the
   crash file path is precomputed at init. A re-entry guard prevents a fault in
@@ -398,6 +409,14 @@ These turn "silent corruption now, crash later" into "crash at the bad access",
 at a fraction of ASan's setup cost — useful for narrowing before committing to a
 full ASan repro.
 
+This is also the recommended daily-driver compromise when ASan's ~2x slowdown
+is too intrusive for interactive use (§5.4): run your normal release build with
+`MallocScribble=1 MallocGuardEdges=1` in the environment of the process that
+spawns the server (same rule as ASAN_OPTIONS — cycle the server for it to take
+effect). An out-of-bounds write then faults *at the write*, so the culprit
+stack lands in both the `.ips` and the crash-ring file, with near-zero
+day-to-day cost.
+
 ### 5.4 Instrumented ASan daily driver: catch corruption that will not reproduce
 
 Some heap-corruption bugs refuse to reproduce under synthetic stress. You get a
@@ -406,9 +425,10 @@ clone; see §1.1), the crash ring names a *subsystem*, but §2's headless ASan
 driving and §4's module fuzzers all stay clean — because the trigger is a rare
 interaction in your **real** multi-day workload (specific pane layout, live TUI
 output, capture/auto-refresh timing), not anything a short script hits. The
-crash ring can still fall short here: a burst of render noise
-(`utf8_to_data`, `tty_draw_line`) can push the corrupting write out of the
-buffer even at `CRASH_RING_LINES` deep.
+crash ring can still fall short here even with its render-noise filter
+(`crash_noise[]`): the filter recovers command-level history, but the
+corrupting write itself does not log, so the ring can only ever name a
+*subsystem*.
 
 When that happens, stop trying to guess the write and instead **make your daily
 tmux the ASan build**. The next time the bug fires in normal use, ASan aborts
@@ -493,6 +513,7 @@ in `/tmp` are cleared on reboot; set `TMUX_ASAN_LOG_DIR` to persist them.
 | Fixing a memory bug | write a red ASan test on the real function, fix, confirm green (§4) |
 | Make daily builds diagnosable | Homebrew formula keeps symbols (`skip_clean`) + frame pointers; crash logger on by default (§5) |
 | Rare heap bug, no ASan rebuild | `MallocScribble=1 MallocGuardEdges=1` or `libgmalloc` (§5.3) |
+| Recurring corruption, ASan too slow for daily use | release build + `MallocScribble=1 MallocGuardEdges=1` as the daily driver (§5.3) |
 | Recurring corruption that will not reproduce | run the ASan build as your daily driver (`tmux-asan-run`); next hit aborts at the bad write (§5.4) |
 
 Build recipes:

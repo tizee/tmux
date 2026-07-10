@@ -175,7 +175,6 @@ dist_tmux_SOURCES = \
 	fuzzy.c \
 	grid-reader.c \
 	grid-view.c \
-	grid.c \
 	hyperlinks.c \
 	input-keys.c \
 	input.c \
@@ -273,6 +272,18 @@ else
 CAPTURE_MAN_FILTER = \
 	sed -e '/^\.\\" CAPTURE-MODE-START$$/,/^\.\\" CAPTURE-MODE-END$$/d' \
 	    -e '/^\.\\" CAPTURE-MODE-SECTION-START$$/,/^\.\\" CAPTURE-MODE-SECTION-END$$/d'
+endif
+
+# Grid engine: safe-Rust (tizee fork, see docs/grid-core-rust.md) or the
+# upstream C implementation.
+if ENABLE_RUST_GRID
+dist_tmux_SOURCES += grid-rust.c
+RUST_GRID_LIB = $(top_srcdir)/tmux-rs/target/release/libgrid_core_ffi.a
+LDADD += $(RUST_GRID_LIB)
+$(RUST_GRID_LIB): FORCE
+	cd $(top_srcdir)/tmux-rs && cargo build --release -p grid-core-ffi
+else
+dist_tmux_SOURCES += grid.c
 endif
 
 # Enable ring-buffer crash logging (tizee fork).

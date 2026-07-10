@@ -1,5 +1,5 @@
 ---
-updated: 2026-07-09
+updated: 2026-07-10
 source: tizee/tmux fork @ next-3.7 (build-gated by --enable-crash-log, default on)
 ---
 
@@ -61,6 +61,8 @@ log_vwrite(msg, ap, prefix)
         v
 crash_log_record(rbuf)
         |
+        |  prefix denylist (crash_noise[]): per-glyph render spam is dropped
+        |  and each run folded into "(ring: dropped N render-noise lines)"
         v
 crash_ring[head++ % CRASH_RING_LINES] = rbuf     (fixed 2-D char array)
         |
@@ -82,6 +84,7 @@ crash_handler(sig)
         +-- write: signal name+number, pid
         +-- backtrace() + backtrace_symbols_fd(fd)
         +-- dump crash_ring tail (oldest -> newest)
+        +-- flush pending dropped-noise count, if any (signal-safe)
         +-- close
         |
         v
@@ -108,6 +111,16 @@ crash_log_init(dirname(socket_path))
   return early when file logging is off; every line still reaches the ring. The
   ring feed is bounded and allocation-free, so the logging-off hot path stays
   cheap. (Without `-v`, the file write is still skipped — only the ring is fed.)
+- **Per-glyph render noise never reaches the ring.** Lines matching the
+  `crash_noise[]` prefix table (`utf8_to_data:`, `utf8_from_data:`, `UTF-8 `,
+  `utf8proc_wcwidth(`, `input_top_bit_set`, `screen_write_combine:`) are
+  dropped and counted; the next kept line is preceded by a single
+  `(ring: dropped N render-noise lines)` summary. A busy TUI pane emits these
+  five-plus times per drawn character, which otherwise evicts the
+  command-level trail the ring exists to preserve. A count still pending when
+  a fatal signal fires is flushed by the handler using only signal-safe
+  primitives. The full render detail is still available via `-vv` file
+  logging, which is unaffected by the filter.
 - **The handler is async-signal-safe.** It calls only `open`, `write`,
   `backtrace`/`backtrace_symbols_fd`, `close`, `signal`, `raise`, plus
   hand-rolled integer formatting. No `malloc`, no `printf`, no `strsignal`. The
@@ -174,13 +187,16 @@ See [`DEBUGGING.md`](DEBUGGING.md) §5.2 for the comparison table.
 | 7 | Disabled build | configured `--disable-crash-log` | server crashes | no crash file; `crash_log_*` not linked; upstream behavior |
 | 8 | Unsupported platform | no `execinfo.h` | `./configure` | crash logging auto-disabled with a warning, build succeeds |
 | 9 | Normal operation | default build, no crash | server runs and exits cleanly | no crash file is ever written |
+| 10 | Render noise folded | a TUI pane logs a burst of `utf8_to_data`/`screen_write_combine` lines | a normal line is recorded after the burst | the ring holds one `(ring: dropped N render-noise lines)` summary, then the normal line; no noise lines |
+| 11 | Pending noise at crash | noise lines were dropped after the last kept line | server crashes | the crash file ends with the dropped-count summary before `=== end ===` |
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `crash-log.c` | `crash_log_record`, `crash_handler`, `crash_log_init`, `crash_prune`, `crash_utoa` |
-| `crash-log.h` | Public API; `CRASH_RING_LINES`, `CRASH_RING_LINE` |
+| `crash-log.c` | `crash_log_record` (noise filter + ring put), `crash_handler`, `crash_log_init`, `crash_prune`, `crash_utoa`, `crash_noise[]` |
+| `crash-log.h` | Public API; `CRASH_RING_LINES`, `CRASH_RING_LINE`; test accessors `crash_log_ring_head`/`crash_log_ring_line` |
+| `test/test_crash_ring.c` | Standalone unit test for the noise filter (drop, fold, prefix-only match, truncation) |
 | `log.c` | `log_vwrite` ring feed; `log_debug` guard under `ENABLE_CRASH_LOG` |
 | `server.c` | `crash_log_init` call in `server_start` |
 | `configure.ac` / `Makefile.am` | `--enable-crash-log` default-on wiring, `execinfo` probe |
@@ -194,6 +210,10 @@ See [`DEBUGGING.md`](DEBUGGING.md) §5.2 for the comparison table.
   file when logging is on).
 - A ring slot half-written when a signal lands is dumped as-is; the ring is a
   best-effort trail, not a transactional log.
+- The noise denylist is static and prefix-based. If a future debugging session
+  needs the per-glyph render trail in the ring itself (not just via `-vv`),
+  the list would need a runtime toggle; so far the `-vv` file has been the
+  right tool for that case.
 
 ## Related Documentation
 

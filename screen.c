@@ -849,9 +849,7 @@ screen_print(struct screen *s, int line)
 	u_int			 x, y;
 	int			 n;
 	size_t			 last = 0;
-	struct utf8_data	 ud;
-	struct grid_line	*gl;
-	struct grid_cell_entry	*gce;
+	struct grid_cell	 gc;
 
 	if (buf == NULL)
 		buf = xmalloc(len);
@@ -864,41 +862,33 @@ screen_print(struct screen *s, int line)
 			goto out;
 		last += n;
 
-		gl = &s->grid->linedata[y];
-		for (x = 0; x < gl->cellused; x++) {
-			gce = &gl->celldata[x];
-			if (gce->flags & GRID_FLAG_PADDING)
+		for (x = 0; x < grid_line_cellused(s->grid, y); x++) {
+			grid_get_cell(s->grid, x, y, &gc);
+			if (gc.flags & GRID_FLAG_PADDING)
 				continue;
 
-			if (~gce->flags & GRID_FLAG_EXTENDED) {
-				if (last + 2 >= len)
-					goto out;
-				buf[last++] = gce->data.data;
-			} else if (gce->flags & GRID_FLAG_TAB) {
+			if (gc.flags & GRID_FLAG_TAB) {
 				if (last + 2 >= len)
 					goto out;
 				buf[last++] = '\t';
-			} else if (gce->flags & GRID_ATTR_CHARSET) {
-				acs = tty_acs_get(NULL, gce->data.data);
+			} else if (gc.attr & GRID_ATTR_CHARSET) {
+				acs = tty_acs_get(NULL, gc.data.data[0]);
 				if (acs != NULL)
 					n = strlen(acs);
 				else {
-					acs = &gce->data.data;
+					acs = (const char *)gc.data.data;
 					n = 1;
 				}
 				if (last + n + 1 >= len)
 					goto out;
 				memcpy(buf + last, acs, n);
 				last += n;
-			} else {
-				utf8_to_data(gl->extddata[gce->offset].data,
-				    &ud);
-				if (ud.size > 0) {
-					if (last + ud.size + 1 >= len)
-						goto out;
-					memcpy(buf + last, ud.data, ud.size);
-					last += ud.size;
-				}
+			} else if (gc.data.size > 0) {
+				if (last + gc.data.size + 1 >= len)
+					goto out;
+				memcpy(buf + last, gc.data.data,
+				    gc.data.size);
+				last += gc.data.size;
 			}
 		}
 

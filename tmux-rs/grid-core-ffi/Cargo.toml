@@ -1,0 +1,13 @@
+[package]
+name = "grid-core-ffi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "C ABI for grid-core: the only unsafe layer, consumed by tmux C code"
+
+[lib]
+name = "grid_core_ffi"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+grid-core = { path = "../grid-core" }

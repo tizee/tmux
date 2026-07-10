@@ -111,7 +111,6 @@ static char *
 cmd_capture_pane_hyperlinks(struct grid *gd, struct screen *s, u_int py,
     u_int *links, u_int *nlinks, size_t *len)
 {
-	const struct grid_line	*gl = grid_peek_line(gd, py);
 	struct grid_cell	 gc;
 	const char		*uri;
 	char			*line = xstrdup("");
@@ -119,10 +118,11 @@ cmd_capture_pane_hyperlinks(struct grid *gd, struct screen *s, u_int py,
 
 	*len = 0;
 
-	if (s->hyperlinks == NULL || (~gl->flags & GRID_LINE_HYPERLINK))
+	if (s->hyperlinks == NULL ||
+	    (~grid_line_flags(gd, py) & GRID_LINE_HYPERLINK))
 		return (line);
 
-	for (i = 0; i < gl->cellused; i++) {
+	for (i = 0; i < grid_line_cellused(gd, py); i++) {
 		grid_get_cell(gd, i, py, &gc);
 		if (gc.link == 0)
 			continue;
@@ -152,12 +152,11 @@ cmd_capture_pane_history(struct args *args, struct cmdq_item *item,
     struct window_pane *wp, size_t *len)
 {
 	struct grid			*gd;
-	const struct grid_line		*gl;
 	struct screen			*s;
 	struct grid_cell		*gc = NULL;
 	struct window_mode_entry	*wme;
 	int				 n, join_lines, number_lines, flags = 0;
-	int				 show_flags, hyperlinks;
+	int				 show_flags, hyperlinks, lflags;
 	u_int				*links = NULL, nlinks = 0;
 	u_int				 i, sx, top, bottom, tmp;
 	char				*cause, *buf = NULL, *line, b[64], *cp;
@@ -270,18 +269,18 @@ cmd_capture_pane_history(struct args *args, struct cmdq_item *item,
 			cp = b;
 			*cp = '\0';
 
-			gl = grid_peek_line(gd, i);
-			if (gl->flags & GRID_LINE_DEAD)
+			lflags = grid_line_flags(gd, i);
+			if (lflags & GRID_LINE_DEAD)
 				*cp++ = 'D';
-			if (gl->flags & GRID_LINE_HYPERLINK)
+			if (lflags & GRID_LINE_HYPERLINK)
 				*cp++ = 'H';
-			if (gl->flags & GRID_LINE_START_OUTPUT)
+			if (lflags & GRID_LINE_START_OUTPUT)
 				*cp++ = 'O';
-			if (gl->flags & GRID_LINE_START_PROMPT)
+			if (lflags & GRID_LINE_START_PROMPT)
 				*cp++ = 'P';
-			if (gl->flags & GRID_LINE_WRAPPED)
+			if (lflags & GRID_LINE_WRAPPED)
 				*cp++ = 'W';
-			if (gl->flags & GRID_LINE_EXTENDED)
+			if (lflags & GRID_LINE_EXTENDED)
 				*cp++ = 'X';
 			if (b == cp)
 				*cp++ = '-';
@@ -291,8 +290,8 @@ cmd_capture_pane_history(struct args *args, struct cmdq_item *item,
 		}
 		buf = cmd_capture_pane_append(buf, len, line, linelen);
 
-		gl = grid_peek_line(gd, i);
-		if (!join_lines || !(gl->flags & GRID_LINE_WRAPPED))
+		if (!join_lines ||
+		    !(grid_line_flags(gd, i) & GRID_LINE_WRAPPED))
 			buf[(*len)++] = '\n';
 
 		free(line);

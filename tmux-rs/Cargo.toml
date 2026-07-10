@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["grid-core", "grid-core-ffi"]
+
+[workspace.package]
+edition = "2021"
+license = "ISC"

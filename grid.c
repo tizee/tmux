@@ -56,6 +56,8 @@ static const struct grid_cell_entry grid_cleared_entry = {
 	{ .data = { 0, 8, 8, ' ' } }, GRID_FLAG_CLEARED
 };
 
+static int	grid_check_y(struct grid *, const char *, u_int);
+
 /* Store cell in entry. */
 static void
 grid_store_cell(struct grid_cell_entry *gce, const struct grid_cell *gc,
@@ -192,6 +194,79 @@ struct grid_line *
 grid_get_line(struct grid *gd, u_int line)
 {
 	return (&gd->linedata[line]);
+}
+
+/* Line metadata accessors: keep struct grid_line internals out of other
+ * files so the storage engine can be swapped (see docs/grid-core-rust.md).
+ */
+int
+grid_line_flags(struct grid *gd, u_int py)
+{
+	if (grid_check_y(gd, __func__, py) != 0)
+		return (0);
+	return (gd->linedata[py].flags);
+}
+
+void
+grid_line_set_flag(struct grid *gd, u_int py, int flag, int on)
+{
+	if (grid_check_y(gd, __func__, py) != 0)
+		return;
+	if (on)
+		gd->linedata[py].flags |= flag;
+	else
+		gd->linedata[py].flags &= ~flag;
+}
+
+u_int
+grid_line_cellsize(struct grid *gd, u_int py)
+{
+	if (grid_check_y(gd, __func__, py) != 0)
+		return (0);
+	return (gd->linedata[py].cellsize);
+}
+
+u_int
+grid_line_cellused(struct grid *gd, u_int py)
+{
+	if (grid_check_y(gd, __func__, py) != 0)
+		return (0);
+	return (gd->linedata[py].cellused);
+}
+
+time_t
+grid_line_time(struct grid *gd, u_int py)
+{
+	if (grid_check_y(gd, __func__, py) != 0)
+		return (0);
+	return (gd->linedata[py].time);
+}
+
+/* Set scroll position. */
+void
+grid_set_hscrolled(struct grid *gd, u_int hscrolled)
+{
+	gd->hscrolled = hscrolled;
+}
+
+/* Storage totals (for format callbacks); keeps struct sizes private. */
+void
+grid_storage(struct grid *gd, u_int *lines, u_int *cells, u_int *extd,
+    size_t *linebytes, size_t *cellbytes, size_t *extdbytes)
+{
+	struct grid_line	*gl;
+	u_int			 i;
+
+	*lines = gd->hsize + gd->sy;
+	*cells = *extd = 0;
+	for (i = 0; i < *lines; i++) {
+		gl = &gd->linedata[i];
+		*cells += gl->cellsize;
+		*extd += gl->extdsize;
+	}
+	*linebytes = *lines * sizeof *gl;
+	*cellbytes = *cells * sizeof *gl->celldata;
+	*extdbytes = *extd * sizeof *gl->extddata;
 }
 
 /* Adjust number of lines. */
@@ -1257,6 +1332,49 @@ grid_duplicate_lines(struct grid *dst, u_int dy, struct grid *src, u_int sy,
 		sy++;
 		dy++;
 	}
+}
+
+/*
+ * Incrementally synchronize a copy grid with its source after the source
+ * scrolled `added` lines into history and collected (freed) `collected`
+ * lines from the top. The caller has already validated that the counters
+ * balance (see window_copy_sync_backing). All linedata surgery lives here
+ * so other files never touch line internals.
+ */
+void
+grid_sync_history(struct grid *dg, struct grid *sg, u_int added,
+    u_int collected)
+{
+	u_int	sy = sg->sy, old_hsize = dg->hsize, new_hsize = sg->hsize;
+	u_int	kept = old_hsize - collected;
+
+	/* Drop the oldest lines and shift the rest down. */
+	if (collected > 0) {
+		grid_free_lines(dg, 0, collected);
+		memmove(&dg->linedata[0], &dg->linedata[collected],
+		    (old_hsize + sy - collected) * sizeof *dg->linedata);
+		memset(&dg->linedata[old_hsize + sy - collected], 0,
+		    collected * sizeof *dg->linedata);
+	}
+
+	/* Resize linedata to the new history plus viewport. */
+	if (new_hsize + sy != old_hsize + sy - collected) {
+		dg->linedata = xreallocarray(dg->linedata, new_hsize + sy,
+		    sizeof *dg->linedata);
+		memset(&dg->linedata[old_hsize + sy - collected], 0,
+		    (new_hsize - kept) * sizeof *dg->linedata);
+	}
+
+	/*
+	 * Set hsize before copying so grid_duplicate_lines does not clamp
+	 * the count to the old, smaller grid size.
+	 */
+	dg->hsize = new_hsize;
+
+	/* Copy the newly scrolled history, then refresh the viewport. */
+	if (added > 0)
+		grid_duplicate_lines(dg, kept, sg, kept, added);
+	grid_duplicate_lines(dg, new_hsize, sg, new_hsize, sy);
 }
 
 /* Mark line as dead. */

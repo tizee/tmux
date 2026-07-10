@@ -936,21 +936,17 @@ format_cb_history_bytes(struct format_tree *ft)
 {
 	struct window_pane	*wp = ft->wp;
 	struct grid		*gd;
-	struct grid_line	*gl;
-	size_t			 size = 0;
-	u_int			 i;
+	size_t			 size, linebytes, cellbytes, extdbytes;
+	u_int			 lines, cells, extd;
 	char			*value;
 
 	if (wp == NULL)
 		return (NULL);
 	gd = wp->base.grid;
 
-	for (i = 0; i < gd->hsize + gd->sy; i++) {
-		gl = grid_get_line(gd, i);
-		size += gl->cellsize * sizeof *gl->celldata;
-		size += gl->extdsize * sizeof *gl->extddata;
-	}
-	size += (gd->hsize + gd->sy) * sizeof *gl;
+	grid_storage(gd, &lines, &cells, &extd, &linebytes, &cellbytes,
+	    &extdbytes);
+	size = linebytes + cellbytes + extdbytes;
 
 	xasprintf(&value, "%zu", size);
 	return (value);
@@ -962,24 +958,19 @@ format_cb_history_all_bytes(struct format_tree *ft)
 {
 	struct window_pane	*wp = ft->wp;
 	struct grid		*gd;
-	struct grid_line	*gl;
-	u_int			 i, lines, cells = 0, extended_cells = 0;
+	size_t			 linebytes, cellbytes, extdbytes;
+	u_int			 lines, cells = 0, extended_cells = 0;
 	char			*value;
 
 	if (wp == NULL)
 		return (NULL);
 	gd = wp->base.grid;
 
-	lines = gd->hsize + gd->sy;
-	for (i = 0; i < lines; i++) {
-		gl = grid_get_line(gd, i);
-		cells += gl->cellsize;
-		extended_cells += gl->extdsize;
-	}
+	grid_storage(gd, &lines, &cells, &extended_cells, &linebytes,
+	    &cellbytes, &extdbytes);
 
-	xasprintf(&value, "%u,%zu,%u,%zu,%u,%zu", lines,
-	    lines * sizeof *gl, cells, cells * sizeof *gl->celldata,
-	    extended_cells, extended_cells * sizeof *gl->extddata);
+	xasprintf(&value, "%u,%zu,%u,%zu,%u,%zu", lines, linebytes, cells,
+	    cellbytes, extended_cells, extdbytes);
 	return (value);
 }
 
@@ -6181,7 +6172,6 @@ format_is_word_separator(const char *ws, const struct grid_cell *gc)
 char *
 format_grid_word(struct grid *gd, u_int x, u_int y)
 {
-	const struct grid_line	*gl;
 	struct grid_cell	 gc;
 	const char		*ws;
 	struct utf8_data	*ud = NULL;
@@ -6203,8 +6193,8 @@ format_grid_word(struct grid *gd, u_int x, u_int y)
 		if (x == 0) {
 			if (y == 0)
 				break;
-			gl = grid_peek_line(gd, y - 1);
-			if (~gl->flags & GRID_LINE_WRAPPED)
+			if (~grid_line_flags(gd, y - 1) &
+			    GRID_LINE_WRAPPED)
 				break;
 			y--;
 			x = grid_line_length(gd, y);
@@ -6219,8 +6209,8 @@ format_grid_word(struct grid *gd, u_int x, u_int y)
 			if (end == 0 || x == end - 1) {
 				if (y == gd->hsize + gd->sy - 1)
 					break;
-				gl = grid_peek_line(gd, y);
-				if (~gl->flags & GRID_LINE_WRAPPED)
+				if (~grid_line_flags(gd, y) &
+				    GRID_LINE_WRAPPED)
 					break;
 				y++;
 				x = 0;

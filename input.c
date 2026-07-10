@@ -3174,18 +3174,16 @@ input_osc_133(struct input_ctx *ictx, const char *p)
 {
 	struct grid		*gd = ictx->ctx.s->grid;
 	u_int			 line = ictx->ctx.s->cy + gd->hsize;
-	struct grid_line	*gl;
 
 	if (line > gd->hsize + gd->sy - 1)
 		return;
-	gl = grid_get_line(gd, line);
 
 	switch (*p) {
 	case 'A':
-		gl->flags |= GRID_LINE_START_PROMPT;
+		grid_line_set_flag(gd, line, GRID_LINE_START_PROMPT, 1);
 		break;
 	case 'C':
-		gl->flags |= GRID_LINE_START_OUTPUT;
+		grid_line_set_flag(gd, line, GRID_LINE_START_OUTPUT, 1);
 		break;
 	}
 }
