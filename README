@@ -248,6 +248,18 @@ requires autoconf, automake and pkg-config:
 	$ ./configure --enable-capture-mode && make
 	$ sudo make install
 
+For a local macOS daily-driver install copied outside the build tree, sign the
+installed copy after the final copy/install step:
+
+	$ cp ./tmux ~/.local/bin/tmux
+	$ codesign --force --sign - ~/.local/bin/tmux
+	$ ~/.local/bin/tmux -V
+
+If `tmux -V` immediately prints `Killed: 9`, check the unified log. A
+`load code signature error` or `AppleSystemPolicy ... would not allow process`
+message means macOS rejected the installed binary before tmux started; re-run
+the `codesign --force --sign -` command on the installed path.
+
 Omit --enable-capture-mode to build a plain upstream-equivalent tmux without
 the capture feature. The ring-buffer crash logger is enabled by default in this
 fork; add --disable-crash-log to omit it (see the Crash Logging section).

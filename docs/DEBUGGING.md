@@ -102,6 +102,31 @@ process's cwd:
 `log_debug()` calls throughout the code land here. This is your `printf`-trace
 channel; it is also the source the ring buffer in §5.2 snapshots on crash.
 
+### 1.3 macOS exec-policy kills before tmux starts
+
+If the shell prints only `Killed: 9` (or zsh prints `killed`) for a client-side
+command such as `tmux -V`, tmux probably did not reach `main()` at all. Check the
+macOS unified log before chasing Rust grid, status-line, or server code:
+
+    log show --style syslog --last 5m --info --debug \
+      --predicate 'eventMessage CONTAINS[c] "tmux" OR process == "tmux"' \
+      | tail -80
+
+A signature/policy failure looks like this:
+
+    load code signature error 2 for file "tmux"
+    AppleSystemPolicy: Security policy would not allow process: .../tmux
+
+That is an installed-binary problem, not a runtime crash. Re-sign the exact copy
+you execute, after the final copy/install/strip step:
+
+    codesign --force --sign - ~/.local/bin/tmux
+    ~/.local/bin/tmux -V
+
+`codesign --verify` can still say the file is valid on disk while Apple System
+Policy rejects it at exec time; the unified log is the source of truth for this
+failure mode.
+
 ---
 
 ## 2. ASan: catch the bug at the write, not the death
@@ -505,6 +530,7 @@ in `/tmp` are cleared on reboot; set `TMUX_ASAN_LOG_DIR` to persist them.
 
 | Situation | Do this |
 |-----------|---------|
+| `tmux -V` or another client command prints `Killed: 9` before tmux starts | Check `log show` for `load code signature error` / `AppleSystemPolicy`; re-sign the installed binary (§1.3) |
 | Server just died | `ls -lat ~/Library/Logs/DiagnosticReports/tmux-*.ips`; read signal + faulting stack (§1.1) |
 | `SIGABRT` + `POINTER BEING FREED WAS NOT ALLOCATED` | heap corruption; the free is the victim — hunt an earlier OOB write with ASan (§1.1, §2) |
 | Wrong rendering / stuck state | `tmux -vv`; read `tmux-server-*.log` (§1.2) |
@@ -535,6 +561,8 @@ Build recipes:
     ./configure --enable-utf8proc --enable-capture-mode \
       CFLAGS="-O2 -g -fno-omit-frame-pointer"
     make -j8            # binary keeps -g3 symbols; dsymutil only if you strip
+    cp ./tmux ~/.local/bin/tmux
+    codesign --force --sign - ~/.local/bin/tmux
 
     # ASan daily driver for a recurring, hard-to-reproduce corruption (§5.4).
     # Match your real build's feature flags (here: the Homebrew formula set),
