@@ -12,32 +12,35 @@ live (upstream #4777 / #4888 / #4962 / #5267; this fork's 2026-07-08 and
 the entire crash class (line-slot aliasing, double-free, stale extended-data
 offsets) is unrepresentable or handled, by construction.
 
-Status: **integrated.** `./configure --enable-rust-grid` (needs cargo) builds
-tmux with the Rust engine: `grid.c` is replaced by the `grid-rust.c` shim
-(delegating wrappers + C copies of the pure SGR/equality functions) linked
-against `libgrid_core_ffi.a`. Default remains the C engine; runtime-verified
-2026-07-10 (capture, history, reflow-resize, copy-mode enter/exit).
+Status: **integrated and default.** The Rust engine is now built by default for
+this fork (`--disable-rust-grid` to opt out): `grid.c` is replaced by the
+`grid-rust.c` shim (delegating wrappers + C copies of the pure SGR/equality
+functions) linked against `libgrid_core_ffi.a`. Requires cargo; a plain
+`./configure` falls back to the C engine (with a warning) only when cargo is
+absent. Runtime-verified 2026-07-10 (capture, history, reflow-resize,
+copy-mode enter/exit).
 
 ## Build and Engine Selection
 
-The Rust grid is selected at configure time with `--enable-rust-grid`. It is not
-a runtime option: the resulting binary links `grid-rust.c` plus
+The grid engine is selected at configure time, not at runtime. The Rust engine
+is the default; the resulting binary links `grid-rust.c` plus
 `libgrid_core_ffi.a` instead of compiling the normal `grid.c` implementation.
+Pass `--disable-rust-grid` to build the C engine instead.
 
-Build the Rust-backed tmux binary:
+Build the Rust-backed tmux binary (the default):
 
 ```sh
 sh autogen.sh    # only needed after editing configure.ac or Makefile.am
-./configure --enable-capture-mode --enable-sixel --disable-utf8proc --enable-rust-grid
+./configure --enable-capture-mode --enable-sixel --disable-utf8proc
 make clean
 make 2>&1 | tail -n 40
 ```
 
-Switch back to the C grid engine by reconfiguring without the flag:
+Switch back to the C grid engine with `--disable-rust-grid`:
 
 ```sh
 make clean
-./configure --enable-capture-mode --enable-sixel --disable-utf8proc
+./configure --enable-capture-mode --enable-sixel --disable-utf8proc --disable-rust-grid
 make 2>&1 | tail -n 40
 ```
 
@@ -57,7 +60,8 @@ because it links against the freshly built C objects:
 sh tmux-rs/difftest/difftest.sh 1 20000
 ```
 
-When switching `--enable-rust-grid` on or off, `make clean` is required. The two
+When toggling the grid engine (adding or removing `--disable-rust-grid`),
+`make clean` is required. The two
 variants compile different grid translation units and stale object files can
 otherwise produce misleading link or runtime results.
 

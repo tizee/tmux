@@ -540,18 +540,26 @@ fi
 AM_CONDITIONAL(ENABLE_CRASH_LOG, [test "x$enable_crash_log" = xyes])
 
 # Enable the safe-Rust grid engine (tizee fork; see docs/grid-core-rust.md).
-# Default OFF; requires cargo. grid.c is replaced by grid-rust.c + the
-# grid-core-ffi static library.
+# Default ON for this fork; use --disable-rust-grid to build the C grid.c.
+# grid.c is replaced by grid-rust.c + the grid-core-ffi static library.
+# Requires cargo: falls back to the C engine (no error) when cargo is absent,
+# unless explicitly requested with --enable-rust-grid.
 AC_ARG_ENABLE(
 	rust-grid,
-	AS_HELP_STRING(--enable-rust-grid, use the Rust grid engine (tizee fork; needs cargo))
+	AS_HELP_STRING(--disable-rust-grid, use the C grid engine instead of the Rust one (tizee fork; default on))
 )
-if test "x$enable_rust_grid" = xyes; then
+if test "x$enable_rust_grid" != xno; then
 	AC_CHECK_PROG(found_cargo, cargo, yes, no)
-	if test "x$found_cargo" != xyes; then
-		AC_MSG_ERROR([--enable-rust-grid needs cargo])
+	if test "x$found_cargo" = xyes; then
+		AC_DEFINE(ENABLE_RUST_GRID)
+		enable_rust_grid=yes
+	else
+		if test "x$enable_rust_grid" = xyes; then
+			AC_MSG_ERROR([--enable-rust-grid needs cargo])
+		fi
+		AC_MSG_WARN([cargo not found; using the C grid engine])
+		enable_rust_grid=no
 	fi
-	AC_DEFINE(ENABLE_RUST_GRID)
 fi
 AM_CONDITIONAL(ENABLE_RUST_GRID, [test "x$enable_rust_grid" = xyes])
 
