@@ -659,7 +659,15 @@ impl Grid {
     }
 
     /// Import geometry that tmux C code wrote directly into `struct grid`.
-    pub fn import_public_geometry(&mut self, sy: u32, hscrolled: u32, hsize: u32, hlimit: u32) {
+    pub fn import_public_geometry(
+        &mut self,
+        sx: u32,
+        sy: u32,
+        hscrolled: u32,
+        hsize: u32,
+        hlimit: u32,
+    ) {
+        self.sx = sx;
         self.sy = sy;
         self.hsize = hsize;
         self.hlimit = hlimit;
@@ -671,10 +679,12 @@ impl Grid {
     pub fn adjust_lines_from_public_geometry(
         &mut self,
         lines: u32,
+        sx: u32,
         hscrolled: u32,
         hsize: u32,
         hlimit: u32,
     ) {
+        self.sx = sx;
         self.hsize = hsize.min(lines);
         self.sy = lines - self.hsize;
         self.hlimit = hlimit;

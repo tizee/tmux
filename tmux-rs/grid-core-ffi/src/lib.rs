@@ -124,17 +124,18 @@ impl rust_grid {
 
     /// Import public `struct grid` fields that tmux C code wrote directly.
     fn import_public_geometry(&mut self) {
-        let (sy, hscrolled, hsize, hlimit) = (self.sy, self.hscrolled, self.hsize, self.hlimit);
+        let (sx, sy, hscrolled, hsize, hlimit) =
+            (self.sx, self.sy, self.hscrolled, self.hsize, self.hlimit);
         self.inner_mut()
-            .import_public_geometry(sy, hscrolled, hsize, hlimit);
+            .import_public_geometry(sx, sy, hscrolled, hsize, hlimit);
     }
 
     /// Apply C `grid_adjust_lines`, deriving the new viewport height from the
     /// total line count and the C-written history size.
     fn adjust_lines_from_public_geometry(&mut self, lines: u32) {
-        let (hscrolled, hsize, hlimit) = (self.hscrolled, self.hsize, self.hlimit);
+        let (sx, hscrolled, hsize, hlimit) = (self.sx, self.hscrolled, self.hsize, self.hlimit);
         self.inner_mut()
-            .adjust_lines_from_public_geometry(lines, hscrolled, hsize, hlimit);
+            .adjust_lines_from_public_geometry(lines, sx, hscrolled, hsize, hlimit);
         self.sync();
     }
 }
@@ -174,6 +175,7 @@ pub unsafe extern "C" fn rust_grid_destroy(gd: *mut rust_grid) {
 macro_rules! with {
     ($gd:expr, $g:ident, $body:expr) => {{
         let h = &mut *$gd;
+        h.import_public_geometry();
         let $g = h.inner_mut();
         let r = $body;
         h.sync();

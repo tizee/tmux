@@ -198,6 +198,33 @@ fn c_resize_geometry_writes_survive_adjust_lines() {
 }
 
 #[test]
+fn c_width_write_survives_next_grid_mutation() {
+    // screen_resize writes gd->sx directly before later grid calls. The Rust
+    // engine must import that width instead of syncing an old inner width back
+    // over it; otherwise status lines redraw at a stale terminal width.
+    let gd = rust_grid_create(80, 1, 0);
+    unsafe {
+        (*gd).sx = 177;
+
+        let style = c_cell(" ", 1);
+        rust_grid_set_cell(gd, 176, 0, &style);
+
+        assert_eq!((*gd).sx, 177, "C-written width survives set_cell sync");
+        assert_eq!(rust_grid_line_cellused(gd, 0), 177);
+
+        rust_grid_clear_lines(gd, 0, 1, 4);
+        assert_eq!((*gd).sx, 177, "C-written width survives clear_lines sync");
+        assert_eq!(rust_grid_line_cellsize(gd, 0), 177);
+
+        let mut out = c_cell(" ", 1);
+        rust_grid_get_cell(gd, 176, 0, &mut out);
+        assert_eq!(out.bg, 4, "full-width clear reaches the resized edge");
+
+        rust_grid_destroy(gd);
+    }
+}
+
+#[test]
 fn c_copy_clone_geometry_writes_survive_set_hscrolled() {
     // window_copy_clone_screen creates a backing grid, duplicates total rows,
     // then writes gd->sy/gd->hsize directly before grid_set_hscrolled().
