@@ -99,7 +99,7 @@ expressions):
 	Email          user@example.com
 	Git commit     a1b2c3d4 (7-40 hex chars)
 	File path      /home/user/file.txt, ~/.config/tmux/tmux.conf,
-	               ./src/main.c, ../up/dir
+	               ./src/main.c, ../up/dir, src/main.c, .plans/report.md
 	IP address     192.168.1.1
 	UUID           550e8400-e29b-41d4-a716-446655440000
 	Hex color      #ff0000, #fff, #ff0000ff
@@ -107,13 +107,15 @@ expressions):
 	Docker SHA     sha256:abcd... (64 hex chars)
 	Memory addr    0x7fff12345678
 
-File paths are matched with leading ~, ./ or ../ included. Use
-@capture-patterns to add more (for example IPv6, GitHub repos, or Markdown
-links), or @capture-patterns-override to replace the built-in set entirely.
+File paths keep their full leading segment, whether that is an absolute /,
+a ~, a ./ or ../ prefix, or a plain or dotfile directory name such as src/ or
+.plans/. Use @capture-patterns to add more (for example IPv6, GitHub repos, or
+Markdown links), or @capture-patterns-override to replace the built-in set
+entirely.
 
 ** Customizing Patterns
 
-Two user options control which text capture mode recognises:
+Three user options control which text capture mode recognises:
 
 	@capture-patterns           Extra alternatives appended to the built-in
 	                            patterns. Your value is joined to the
