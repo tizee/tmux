@@ -23,26 +23,37 @@
 #include <sys/types.h>
 
 /*
- * Built-in default pattern for capture mode. Matches URLs, emails, git SHAs,
- * file paths, IP addresses, UUIDs, hex colors, MAC addresses, hashes.
+ * Built-in default patterns for capture mode, one entry per named category:
+ * URLs, emails, git SHAs, file paths, IPv4, UUIDs, hex colors, MAC addresses,
+ * sha256 hashes and hex addresses.
+ *
+ * Category names (for @capture-patterns-disable): url, email, git-sha, path,
+ * ipv4, uuid, hex-color, mac, sha256, hex-address.
  *
  * The @capture-patterns user option appends additional alternations.
- * The @capture-patterns-override user option replaces this entirely.
+ * The @capture-patterns-disable option removes named categories (comma list).
+ * The @capture-patterns-override option replaces this entirely.
  */
+#define CAPTURE_PAT_URL		"https?://[^[:space:]]+"
+#define CAPTURE_PAT_EMAIL	"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+#define CAPTURE_PAT_GIT_SHA	"[0-9a-fA-F]{7,40}"
+#define CAPTURE_PAT_PATH	"[[:alnum:]_.@$:()~+-]*(/[[:alnum:]_.@$:()~+-]+)+"
+#define CAPTURE_PAT_IPV4 \
+	"[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}"
+#define CAPTURE_PAT_UUID \
+	"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}" \
+	"-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+#define CAPTURE_PAT_HEX_COLOR \
+	"#[0-9a-fA-F]{8}[[:>:]]|#[0-9a-fA-F]{6}[[:>:]]|#[0-9a-fA-F]{3}[[:>:]]"
+#define CAPTURE_PAT_MAC		"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"
+#define CAPTURE_PAT_SHA256	"sha256:[0-9a-fA-F]{64}"
+#define CAPTURE_PAT_HEX_ADDRESS	"0x[0-9a-fA-F]+"
+
 #define CAPTURE_DEFAULT_PATTERNS \
-	"https?://[^[:space:]]+" \
-	"|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}" \
-	"|[0-9a-fA-F]{7,40}" \
-	"|(~|\\.\\.?)?(/[[:alnum:]_.@$:()~+-]+)+" \
-	"|[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}" \
-	"|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}" \
-	"-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}" \
-	"|#[0-9a-fA-F]{8}[[:>:]]" \
-	"|#[0-9a-fA-F]{6}[[:>:]]" \
-	"|#[0-9a-fA-F]{3}[[:>:]]" \
-	"|([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}" \
-	"|sha256:[0-9a-fA-F]{64}" \
-	"|0x[0-9a-fA-F]+"
+	CAPTURE_PAT_URL "|" CAPTURE_PAT_EMAIL "|" CAPTURE_PAT_GIT_SHA "|" \
+	CAPTURE_PAT_PATH "|" CAPTURE_PAT_IPV4 "|" CAPTURE_PAT_UUID "|" \
+	CAPTURE_PAT_HEX_COLOR "|" CAPTURE_PAT_MAC "|" CAPTURE_PAT_SHA256 "|" \
+	CAPTURE_PAT_HEX_ADDRESS
 
 /* A compiled pattern (single regex with alternations). */
 struct capture_pattern {
@@ -61,6 +72,13 @@ struct capture_match {
 int			 capture_pattern_compile(struct capture_pattern *,
 			     const char *);
 void			 capture_pattern_free(struct capture_pattern *);
+
+/*
+ * Build the default pattern string, excluding categories named in the
+ * comma-separated list (NULL or "" disables nothing; unknown names are
+ * ignored). Returns a malloc'd string (possibly empty); caller frees.
+ */
+char			*capture_pattern_default(const char *);
 
 /* Match pattern against a single line of text. Returns malloc'd array. */
 struct capture_match	*capture_pattern_match_line(struct capture_pattern *,

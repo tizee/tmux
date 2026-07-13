@@ -4246,6 +4246,27 @@ The value is joined to the defaults with
 .Ql \&| ,
 so the built-in patterns continue to work and the user patterns are added on
 top.
+.It Ic @capture-patterns-disable Ar names
+A comma-separated list of built-in pattern categories to disable.
+The remaining built-in categories are still matched, and any
+.Ic @capture-patterns
+value is still appended.
+The category names are
+.Ql url ,
+.Ql email ,
+.Ql git-sha ,
+.Ql path ,
+.Ql ipv4 ,
+.Ql uuid ,
+.Ql hex-color ,
+.Ql mac ,
+.Ql sha256
+and
+.Ql hex-address .
+Unknown names are ignored.
+This option has no effect when
+.Ic @capture-patterns-override
+is set.
 .It Ic @capture-patterns-override Ar regex
 A POSIX extended regular expression that replaces the built-in patterns
 entirely.
@@ -4309,6 +4330,10 @@ set -g @capture-patterns "[A-Z]+-[[:digit:]]+|TODO|FIXME"
 To match only quoted strings and nothing else:
 .Bd -literal -offset indent
 set -g @capture-patterns-override '"[^"]*"'
+.Ed
+To keep the built-in categories but stop matching git SHAs and hex addresses:
+.Bd -literal -offset indent
+set -g @capture-patterns-disable "git-sha,hex-address"
 .Ed
 .\" CAPTURE-MODE-SECTION-END
 .\" CRASH-LOG-SECTION-START

@@ -56,6 +56,99 @@ capture_pattern_free(struct capture_pattern *cp)
 	cp->valid = 0;
 }
 
+/* One named alternation of the built-in default pattern set. */
+struct capture_named_pattern {
+	const char	*name;
+	const char	*re;
+};
+
+static const struct capture_named_pattern capture_named_patterns[] = {
+	{ "url",	 CAPTURE_PAT_URL },
+	{ "email",	 CAPTURE_PAT_EMAIL },
+	{ "git-sha",	 CAPTURE_PAT_GIT_SHA },
+	{ "path",	 CAPTURE_PAT_PATH },
+	{ "ipv4",	 CAPTURE_PAT_IPV4 },
+	{ "uuid",	 CAPTURE_PAT_UUID },
+	{ "hex-color",	 CAPTURE_PAT_HEX_COLOR },
+	{ "mac",	 CAPTURE_PAT_MAC },
+	{ "sha256",	 CAPTURE_PAT_SHA256 },
+	{ "hex-address", CAPTURE_PAT_HEX_ADDRESS },
+};
+
+/*
+ * Return 1 if name appears as a token in the comma-separated list, else 0.
+ * Whitespace surrounding each token is ignored.
+ */
+static int
+capture_pattern_in_list(const char *list, const char *name)
+{
+	const char	*p, *start;
+	size_t		 namelen, toklen;
+
+	if (list == NULL)
+		return (0);
+	namelen = strlen(name);
+	p = list;
+	while (*p != '\0') {
+		while (*p == ' ' || *p == '\t' || *p == ',')
+			p++;
+		start = p;
+		while (*p != '\0' && *p != ',')
+			p++;
+		toklen = (size_t)(p - start);
+		while (toklen > 0 && (start[toklen - 1] == ' ' ||
+		    start[toklen - 1] == '\t'))
+			toklen--;
+		if (toklen == namelen && strncmp(start, name, namelen) == 0)
+			return (1);
+	}
+	return (0);
+}
+
+/*
+ * Build the default pattern string from the named table, excluding any
+ * categories present in the comma-separated disable list. Returns a malloc'd
+ * string (empty if every category is disabled); NULL only on allocation
+ * failure.
+ */
+char *
+capture_pattern_default(const char *disable)
+{
+	char		*result, *tmp;
+	const char	*re;
+	size_t		 i, n, len, relen, need;
+	int		 first;
+
+	n = sizeof capture_named_patterns / sizeof capture_named_patterns[0];
+	result = malloc(1);
+	if (result == NULL)
+		return (NULL);
+	result[0] = '\0';
+	len = 0;
+	first = 1;
+
+	for (i = 0; i < n; i++) {
+		if (capture_pattern_in_list(disable,
+		    capture_named_patterns[i].name))
+			continue;
+		re = capture_named_patterns[i].re;
+		relen = strlen(re);
+		need = len + (first ? 0 : 1) + relen + 1;
+		tmp = realloc(result, need);
+		if (tmp == NULL) {
+			free(result);
+			return (NULL);
+		}
+		result = tmp;
+		if (!first)
+			result[len++] = '|';
+		memcpy(result + len, re, relen + 1);
+		len += relen;
+		first = 0;
+	}
+	return (result);
+}
+
 /*
  * Trim trailing characters that cannot legitimately end a URL or path. Plain
  * sentence punctuation (.,;:!?'") is always stripped. Closing brackets are

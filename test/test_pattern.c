@@ -177,6 +177,135 @@ TEST(match_absolute_and_relative_path)
 	capture_pattern_free(&cp);
 }
 
+TEST(match_dotfile_relative_path)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	int		       count = 0;
+
+	capture_pattern_compile(&cp, CAPTURE_DEFAULT_PATTERNS);
+
+	/*
+	 * A relative path whose first segment is a plain or dotfile name
+	 * (not ~, . or ..) must be matched in full, not truncated to the
+	 * first slash. Regression: ".plans/..." used to match only from
+	 * "/FEAT-256...".
+	 */
+	matches = capture_pattern_match_line(
+		&cp,
+		"see .plans/FEAT-256-tui-app-extraction-260713/"
+		"structure-refactor-report.md now",
+		0, &count);
+	ASSERT(count >= 1, "should find the dotfile relative path");
+	ASSERT_STR_EQ(matches[0].text,
+		      ".plans/FEAT-256-tui-app-extraction-260713/"
+		      "structure-refactor-report.md",
+		      "should include the leading .plans segment");
+	capture_match_free(matches, count);
+	matches = NULL;
+	count = 0;
+
+	/* A plain relative first segment (no leading dot) must also survive. */
+	matches = capture_pattern_match_line(
+		&cp, "open src/main.c please", 0, &count);
+	ASSERT(count >= 1, "should find the plain relative path");
+	ASSERT_STR_EQ(matches[0].text, "src/main.c",
+		      "should include the leading src segment");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(default_matches_git_sha)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	char		      *pattern;
+	int		       count = 0;
+
+	/* By default the git-sha category is active. */
+	pattern = capture_pattern_default(NULL);
+	capture_pattern_compile(&cp, pattern);
+	free(pattern);
+
+	matches = capture_pattern_match_line(&cp, "commit a543312d done", 0,
+					     &count);
+	ASSERT(count >= 1, "git sha matched by default");
+	ASSERT_STR_EQ(matches[0].text, "a543312d", "git sha text");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(disable_single_category)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	char		      *pattern;
+	int		       count = 0;
+
+	/* Disabling git-sha removes it but keeps every other category. */
+	pattern = capture_pattern_default("git-sha");
+	capture_pattern_compile(&cp, pattern);
+	free(pattern);
+
+	matches = capture_pattern_match_line(&cp, "commit a543312d done", 0,
+					     &count);
+	ASSERT_INT_EQ(count, 0, "git sha not matched when disabled");
+	capture_match_free(matches, count);
+	matches = NULL;
+	count = 0;
+
+	/* URLs still work after disabling an unrelated category. */
+	matches = capture_pattern_match_line(
+		&cp, "see https://example.com/x here", 0, &count);
+	ASSERT_INT_EQ(count, 1, "url still matched");
+	ASSERT_STR_EQ(matches[0].text, "https://example.com/x", "url text");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(disable_multiple_categories)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	char		      *pattern;
+	int		       count = 0;
+
+	/* Whitespace around names in the comma list is tolerated. */
+	pattern = capture_pattern_default("git-sha, ipv4");
+	capture_pattern_compile(&cp, pattern);
+	free(pattern);
+
+	matches = capture_pattern_match_line(
+		&cp, "host 10.0.0.1 sha a543312d done", 0, &count);
+	ASSERT_INT_EQ(count, 0, "both disabled categories gone");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
+TEST(disable_unknown_name_ignored)
+{
+	struct capture_pattern cp = { .valid = 0 };
+	struct capture_match  *matches;
+	char		      *pattern;
+	int		       count = 0;
+
+	/* An unknown category name disables nothing. */
+	pattern = capture_pattern_default("bogus-name");
+	capture_pattern_compile(&cp, pattern);
+	free(pattern);
+
+	matches = capture_pattern_match_line(&cp, "commit a543312d done", 0,
+					     &count);
+	ASSERT(count >= 1, "unknown disable name leaves defaults intact");
+
+	capture_match_free(matches, count);
+	capture_pattern_free(&cp);
+}
+
 TEST(match_multiple)
 {
 	struct capture_pattern cp = { .valid = 0 };
@@ -482,6 +611,11 @@ main(void)
 	RUN_TEST(match_email);
 	RUN_TEST(match_home_path);
 	RUN_TEST(match_absolute_and_relative_path);
+	RUN_TEST(match_dotfile_relative_path);
+	RUN_TEST(default_matches_git_sha);
+	RUN_TEST(disable_single_category);
+	RUN_TEST(disable_multiple_categories);
+	RUN_TEST(disable_unknown_name_ignored);
 	RUN_TEST(match_multiple);
 	RUN_TEST(match_none);
 	RUN_TEST(match_with_alternation);

@@ -5821,30 +5821,41 @@ window_copy_capture_clear(struct window_copy_mode_data *data)
 }
 
 /*
- * Build the combined capture pattern from user options. The override option
- * replaces the built-in patterns entirely; otherwise @capture-patterns is
- * appended as additional alternations. Caller frees the returned string.
+ * Build the combined capture pattern from user options. @capture-patterns-override
+ * replaces the built-in patterns entirely. Otherwise the built-in categories
+ * are used minus any named in @capture-patterns-disable, and @capture-patterns
+ * is appended as additional alternations. Caller frees the returned string.
  */
 static char *
 window_copy_capture_pattern(struct options *oo)
 {
-	const char	*extra;
-	char		*pattern;
+	const char	*extra, *disable;
+	char		*base, *pattern;
 
 	if (options_get(oo, "@capture-patterns-override") != NULL) {
 		return (xstrdup(options_get_string(oo,
 		    "@capture-patterns-override")));
 	}
 
+	disable = NULL;
+	if (options_get(oo, "@capture-patterns-disable") != NULL)
+		disable = options_get_string(oo, "@capture-patterns-disable");
+	base = capture_pattern_default(disable);
+	if (base == NULL)
+		return (xstrdup(""));
+
 	if (options_get(oo, "@capture-patterns") != NULL) {
 		extra = options_get_string(oo, "@capture-patterns");
 		if (*extra != '\0') {
-			xasprintf(&pattern, "%s|%s", CAPTURE_DEFAULT_PATTERNS,
-			    extra);
+			if (*base != '\0')
+				xasprintf(&pattern, "%s|%s", base, extra);
+			else
+				pattern = xstrdup(extra);
+			free(base);
 			return (pattern);
 		}
 	}
-	return (xstrdup(CAPTURE_DEFAULT_PATTERNS));
+	return (base);
 }
 
 /*

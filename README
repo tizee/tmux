@@ -123,6 +123,13 @@ Two user options control which text capture mode recognises:
 	@capture-patterns-override  Replaces the built-in patterns entirely.
 	                            Only the text your regex matches is detected.
 
+	@capture-patterns-disable   Comma-separated list of built-in categories
+	                            to turn off, keeping the rest. Names: url,
+	                            email, git-sha, path, ipv4, uuid, hex-color,
+	                            mac, sha256, hex-address. Unknown names are
+	                            ignored. Has no effect when
+	                            @capture-patterns-override is set.
+
 Both options take a single POSIX extended regular expression (ERE), the same
 flavour tmux uses for copy-mode search. Important syntax notes:
 
@@ -153,6 +160,10 @@ Examples (append to the built-ins):
 Replace the built-ins entirely (only match quoted strings):
 
 	set -g @capture-patterns-override '"[^"]*"'
+
+Disable noisy built-in categories while keeping the rest:
+
+	set -g @capture-patterns-disable "git-sha,hex-address"
 
 * Crash Logging
 
